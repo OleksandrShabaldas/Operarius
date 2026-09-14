@@ -41,12 +41,6 @@ jobs:
           node-version: 20
           cache: npm
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
-
       - name: Install dependencies
         run: npm ci
 
@@ -64,6 +58,15 @@ jobs:
 
       - name: Prebuild native Android project
         run: npx expo prebuild --platform android --no-install
+
+      # Runs after prebuild so the Gradle-cache glob (android/**/*.gradle*)
+      # has files to key against — the android/ dir doesn't exist until
+      # `expo prebuild` generates it.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
 
       - name: Pin signing keystore
         # Overwrite the generated debug keystore with the committed one so every

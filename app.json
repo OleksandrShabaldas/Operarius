@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Operarius",
+    "slug": "Operarius",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "operarius",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b0b0d",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.operarius.app",
+      "backgroundColor": "#0b0b0d",
+      "versionCode": 1,
+      "permissions": ["android.permission.REQUEST_INSTALL_PACKAGES"],
+      "adaptiveIcon": {
+        "backgroundColor": "#0b0b0d",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0b0b0d",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#0b0b0d",
+            "image": "./assets/splash-icon.png"
+          }
+        }
+      ],
+      "expo-font"
+    ]
+  }
+}

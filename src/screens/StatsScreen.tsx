@@ -1,0 +1,262 @@
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
+import { C, TAGS } from '../theme';
+import { useApp } from '../store';
+import { dateFromKey, fmtHours, todayKey, weekdayLetters, weekOf } from '../utils';
+import { Tab } from '../components/BottomNav';
+
+const TAG_COLORS: Record<string, string> = {
+  Work: '#7C7CF0',
+  Focus: '#5B9DF9',
+  Health: '#5FD08A',
+  Personal: '#4FD1C5',
+  Errand: '#F5A15C',
+  Untagged: '#5b5b63',
+};
+
+type Range = 'today' | 'week';
+
+export function StatsScreen({
+  onPickDay,
+}: {
+  onPickDay: (key: string, tab: Tab) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { tasks, settings } = useApp();
+  const [range, setRange] = useState<Range>('week');
+
+  const today = todayKey();
+  const week = useMemo(() => weekOf(today, settings.weekStart), [today, settings.weekStart]);
+  const letters = weekdayLetters(settings.weekStart);
+
+  const rangeKeys = range === 'today' ? [today] : week;
+  const rangeTasks = useMemo(
+    () => tasks.filter((t) => rangeKeys.includes(t.date)),
+    [tasks, rangeKeys.join(',')]
+  );
+
+  const total = rangeTasks.length;
+  const done = rangeTasks.filter((t) => t.done).length;
+  const pct = total ? done / total : 0;
+  const schedMin = rangeTasks.reduce((s, t) => s + t.dur, 0);
+  const doneMin = rangeTasks.filter((t) => t.done).reduce((s, t) => s + t.dur, 0);
+  const windowMin = settings.dayEnd - settings.dayStart;
+  const freeMin = Math.max(0, windowMin * rangeKeys.length - schedMin);
+
+  // Per-day breakdown for the week chart.
+  const perDay = useMemo(
+    () =>
+      week.map((key) => {
+        const dt = tasks.filter((t) => t.date === key);
+        return {
+          key,
+          sched: dt.reduce((s, t) => s + t.dur, 0),
+          done: dt.filter((t) => t.done).reduce((s, t) => s + t.dur, 0),
+        };
+      }),
+    [tasks, week.join(',')]
+  );
+  const maxDay = Math.max(60, ...perDay.map((d) => d.sched));
+
+  // Time by tag.
+  const tagRows = useMemo(() => {
+    const names = [...TAGS, 'Untagged'];
+    const rows = names.map((name) => {
+      const mins = rangeTasks
+        .filter((t) => (name === 'Untagged' ? !t.tag : t.tag === name))
+        .reduce((s, t) => s + t.dur, 0);
+      return { name, mins, color: TAG_COLORS[name] || C.faint };
+    });
+    return rows.filter((r) => r.mins > 0).sort((a, b) => b.mins - a.mins);
+  }, [rangeTasks]);
+  const maxTag = Math.max(1, ...tagRows.map((r) => r.mins));
+
+  return (
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + 120, paddingHorizontal: 22 }}
+      showsVerticalScrollIndicator={false}>
+      <Text style={styles.title}>Insights</Text>
+
+      <View style={styles.segment}>
+        {(['today', 'week'] as const).map((r) => {
+          const on = range === r;
+          return (
+            <Pressable key={r} onPress={() => setRange(r)} style={[styles.segBtn, on && styles.segBtnOn]}>
+              <Text style={[styles.segTxt, { color: on ? '#0b0b0d' : C.textDim }]}>
+                {r === 'today' ? 'Today' : 'This week'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Completion ring + tiles */}
+      <View style={styles.card}>
+        <View style={styles.ringRow}>
+          <Ring pct={pct} />
+          <View style={styles.ringMeta}>
+            <Text style={styles.ringBig}>
+              {done}
+              <Text style={styles.ringSlash}> / {total}</Text>
+            </Text>
+            <Text style={styles.ringLabel}>tasks completed</Text>
+            <Text style={styles.ringPct}>{Math.round(pct * 100)}% done</Text>
+          </View>
+        </View>
+        <View style={styles.tiles}>
+          <Tile label="Scheduled" value={fmtHours(schedMin)} />
+          <Tile label="Completed" value={fmtHours(doneMin)} />
+          <Tile label="Free" value={fmtHours(freeMin)} />
+        </View>
+      </View>
+
+      {/* Weekly chart */}
+      <Text style={styles.section}>SCHEDULED PER DAY</Text>
+      <View style={styles.card}>
+        <View style={styles.chart}>
+          {perDay.map((d, i) => {
+            const h = Math.round((d.sched / maxDay) * 120);
+            const doneH = d.sched ? Math.round((d.done / d.sched) * h) : 0;
+            const isToday = d.key === today;
+            return (
+              <Pressable key={d.key} style={styles.barCol} onPress={() => onPickDay(d.key, 'today')}>
+                <View style={styles.barTrack}>
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        height: Math.max(h, d.sched ? 6 : 0),
+                        backgroundColor: isToday ? C.accentA : 'rgba(255,255,255,0.12)',
+                      },
+                    ]}>
+                    {doneH > 0 && (
+                      <View style={[styles.barDone, { height: doneH, backgroundColor: isToday ? C.accentB : 'rgba(255,255,255,0.35)' }]} />
+                    )}
+                  </View>
+                </View>
+                <Text style={[styles.barLbl, isToday && { color: C.text }]}>{letters[i]}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.legend}>
+          <Legend color={C.accentB} label="Completed" />
+          <Legend color="rgba(255,255,255,0.2)" label="Scheduled" />
+        </View>
+      </View>
+
+      {/* Time by tag */}
+      <Text style={styles.section}>TIME BY TAG</Text>
+      <View style={styles.card}>
+        {tagRows.length === 0 ? (
+          <Text style={styles.emptyTxt}>No tasks in this range yet.</Text>
+        ) : (
+          tagRows.map((r) => (
+            <View key={r.name} style={styles.tagRow}>
+              <Text style={styles.tagName}>{r.name}</Text>
+              <View style={styles.tagBarTrack}>
+                <View style={[styles.tagBar, { width: `${(r.mins / maxTag) * 100}%`, backgroundColor: r.color }]} />
+              </View>
+              <Text style={styles.tagMins}>{fmtHours(r.mins)}</Text>
+            </View>
+          ))
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+function Ring({ pct }: { pct: number }) {
+  const size = 104;
+  const sw = 12;
+  const r = (size - sw) / 2;
+  const circ = 2 * Math.PI * r;
+  const off = circ * (1 - pct);
+  return (
+    <Svg width={size} height={size}>
+      <Defs>
+        <SvgGrad id="ring" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0" stopColor={C.accentA} />
+          <Stop offset="1" stopColor={C.accentB} />
+        </SvgGrad>
+      </Defs>
+      <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth={sw} fill="none" />
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        stroke="url(#ring)"
+        strokeWidth={sw}
+        fill="none"
+        strokeDasharray={circ}
+        strokeDashoffset={off}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </Svg>
+  );
+}
+
+function Tile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.tile}>
+      <Text style={styles.tileVal}>{value}</Text>
+      <Text style={styles.tileLbl}>{label}</Text>
+    </View>
+  );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendTxt}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  title: { fontSize: 30, fontWeight: '700', color: C.text, letterSpacing: -0.5, marginBottom: 16 },
+  segment: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  segBtn: { flex: 1, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  segBtnOn: { backgroundColor: C.accentB },
+  segTxt: { fontSize: 13.5, fontWeight: '600' },
+  card: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 18,
+    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.05)',
+  },
+  ringRow: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  ringMeta: { flex: 1 },
+  ringBig: { fontSize: 34, fontWeight: '700', color: C.text },
+  ringSlash: { fontSize: 22, fontWeight: '600', color: C.faint },
+  ringLabel: { fontSize: 13, color: C.muted, marginTop: 2 },
+  ringPct: { fontSize: 13, fontWeight: '600', color: C.accentB, marginTop: 6 },
+  tiles: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  tile: { flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
+  tileVal: { fontSize: 18, fontWeight: '700', color: C.text },
+  tileLbl: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '600' },
+  section: { fontSize: 11, color: C.muted, fontWeight: '700', letterSpacing: 0.5, marginBottom: 10 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 140 },
+  barCol: { flex: 1, alignItems: 'center', gap: 8 },
+  barTrack: { height: 120, justifyContent: 'flex-end' },
+  bar: { width: 22, borderRadius: 7, justifyContent: 'flex-end', overflow: 'hidden' },
+  barDone: { width: '100%', borderRadius: 7 },
+  barLbl: { fontSize: 11, fontWeight: '600', color: C.faint },
+  legend: { flexDirection: 'row', gap: 16, marginTop: 14, justifyContent: 'center' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 9, height: 9, borderRadius: 3 },
+  legendTxt: { fontSize: 11, color: C.muted, fontWeight: '600' },
+  tagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  tagName: { width: 68, fontSize: 12.5, color: C.textDim, fontWeight: '600' },
+  tagBarTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
+  tagBar: { height: 10, borderRadius: 5 },
+  tagMins: { width: 42, textAlign: 'right', fontSize: 12, color: C.muted, fontVariant: ['tabular-nums'] },
+  emptyTxt: { color: C.faint, fontSize: 13, textAlign: 'center', paddingVertical: 10 },
+});

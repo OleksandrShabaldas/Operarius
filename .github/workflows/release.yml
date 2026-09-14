@@ -1,0 +1,95 @@
+name: Build & Release APK
+
+# Builds a signed release APK and publishes it as a GitHub Release.
+# Trigger by pushing a version tag (e.g. `git tag v1.0.1 && git push origin v1.0.1`)
+# or from the Actions tab → "Run workflow" and type the version (e.g. 1.0.1).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.0.1 (creates tag v1.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          V="${V#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "Building version $V (tag v$V)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stamp version and versionCode
+        run: |
+          node -e "
+          const fs=require('fs');
+          const j=JSON.parse(fs.readFileSync('app.json','utf8'));
+          j.expo.version='${{ steps.ver.outputs.version }}';
+          j.expo.android=j.expo.android||{};
+          j.expo.android.versionCode=${{ github.run_number }};
+          fs.writeFileSync('app.json', JSON.stringify(j,null,2));
+          console.log('version', j.expo.version, 'versionCode', j.expo.android.versionCode);
+          "
+
+      - name: Prebuild native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Pin signing keystore
+        # Overwrite the generated debug keystore with the committed one so every
+        # release is signed with the SAME key (required for in-place updates).
+        run: cp signing/debug.keystore android/app/debug.keystore
+
+      - name: Build release APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/Operarius-${{ steps.ver.outputs.tag }}.apk"
+          ls -la dist
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            "dist/Operarius-${{ steps.ver.outputs.tag }}.apk" \
+            --title "Operarius ${{ steps.ver.outputs.tag }}" \
+            --generate-notes \
+            --target "${{ github.sha }}" \
+          || gh release upload "${{ steps.ver.outputs.tag }}" \
+            "dist/Operarius-${{ steps.ver.outputs.tag }}.apk" --clobber

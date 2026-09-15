@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Directory, File, Paths } from 'expo-file-system';
@@ -91,8 +91,13 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
   return { current, available: isNewer(release.version, current), release };
 }
 
-// Download the release APK and launch Android's package installer.
-export async function downloadAndInstall(release: ReleaseInfo): Promise<void> {
+// Download the release APK and launch Android's package installer. Reports
+// progress (0..1) and aborts if the transfer stalls, so a flaky connection
+// surfaces quickly and the caller can fall back to the browser download.
+export async function downloadAndInstall(
+  release: ReleaseInfo,
+  onProgress?: (frac: number) => void
+): Promise<void> {
   if (Platform.OS !== 'android' || !release.apkUrl) {
     throw new Error('No installable APK for this platform.');
   }
@@ -105,13 +110,45 @@ export async function downloadAndInstall(release: ReleaseInfo): Promise<void> {
   }
   dir.create();
 
-  const file = await File.downloadFileAsync(release.apkUrl, dir);
-  const uri = file.contentUri; // content:// URI backed by a FileProvider
-  if (!uri) throw new Error('Could not resolve the downloaded file.');
+  const ctrl = new AbortController();
+  let last = Date.now();
+  const watch = setInterval(() => {
+    if (Date.now() - last > 45000) ctrl.abort(); // no progress for 45s → give up
+  }, 5000);
 
-  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-    data: uri,
-    type: 'application/vnd.android.package-archive',
-    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-  });
+  try {
+    const file = await File.downloadFileAsync(release.apkUrl, dir, {
+      idempotent: true,
+      signal: ctrl.signal,
+      onProgress: (p) => {
+        last = Date.now();
+        if (onProgress && p.totalBytes > 0) onProgress(Math.min(1, p.bytesWritten / p.totalBytes));
+      },
+    });
+    const uri = file.contentUri; // content:// URI backed by a FileProvider
+    if (!uri) throw new Error('Could not resolve the downloaded file.');
+
+    await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+      data: uri,
+      type: 'application/vnd.android.package-archive',
+      flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+    });
+  } finally {
+    clearInterval(watch);
+  }
+}
+
+// Robust fallback: hand the APK URL to the system browser / download manager,
+// which handles large files, retries and resume far better than an in-app read.
+export function openApkInBrowser(release: ReleaseInfo): void {
+  Linking.openURL(release.apkUrl || release.htmlUrl).catch(() => {});
+}
+
+// Strip GitHub's auto "Full Changelog" line and markdown headings for display.
+export function cleanNotes(notes: string): string {
+  return notes
+    .split('\n')
+    .filter((l) => !/^\s*\*\*full changelog/i.test(l) && !/^\s*#{1,6}\s/.test(l))
+    .join('\n')
+    .trim();
 }

@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
 
-export type Tab = 'today' | 'stats';
+export type Tab = 'today' | 'todo';
 
 export function BottomNav({
   tab,
@@ -32,11 +32,11 @@ export function BottomNav({
         />
         <View style={{ width: 60 }} />
         <NavItem
-          icon="stats-chart-outline"
-          iconOn="stats-chart"
-          label="Stats"
-          active={tab === 'stats'}
-          onPress={() => onTab('stats')}
+          icon="checkbox-outline"
+          iconOn="checkbox"
+          label="To-do"
+          active={tab === 'todo'}
+          onPress={() => onTab('todo')}
         />
       </View>
 

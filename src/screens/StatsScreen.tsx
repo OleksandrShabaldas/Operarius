@@ -1,18 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { C, COLORS } from '../theme';
 import { useApp } from '../store';
 import { fmtHours, todayKey, weekdayLetters, weekOf } from '../utils';
-import { Tab } from '../components/BottomNav';
 
 type Range = 'today' | 'week';
 
 export function StatsScreen({
+  onClose,
   onPickDay,
 }: {
-  onPickDay: (key: string, tab: Tab) => void;
+  onClose: () => void;
+  onPickDay: (key: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { tasks, settings } = useApp();
@@ -24,7 +26,7 @@ export function StatsScreen({
 
   const rangeKeys = range === 'today' ? [today] : week;
   const rangeTasks = useMemo(
-    () => tasks.filter((t) => rangeKeys.includes(t.date)),
+    () => tasks.filter((t) => t.type === 'planned' && t.date != null && rangeKeys.includes(t.date)),
     [tasks, rangeKeys.join(',')]
   );
 
@@ -40,7 +42,7 @@ export function StatsScreen({
   const perDay = useMemo(
     () =>
       week.map((key) => {
-        const dt = tasks.filter((t) => t.date === key);
+        const dt = tasks.filter((t) => t.type === 'planned' && t.date === key);
         return {
           key,
           sched: dt.reduce((s, t) => s + t.dur, 0),
@@ -75,12 +77,17 @@ export function StatsScreen({
   const maxTag = Math.max(1, ...tagRows.map((r) => r.mins));
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + 120, paddingHorizontal: 22 }}
-      showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>Insights</Text>
-
+    <View style={styles.root}>
+      <View style={[styles.head, { paddingTop: insets.top }]}>
+        <Pressable onPress={onClose} hitSlop={10} style={styles.backBtn}>
+          <Feather name="chevron-left" size={24} color={C.text} />
+        </Pressable>
+        <Text style={styles.headTitle}>Insights</Text>
+        <View style={{ width: 40 }} />
+      </View>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: insets.bottom + 30, paddingHorizontal: 22 }}
+        showsVerticalScrollIndicator={false}>
       <View style={styles.segment}>
         {(['today', 'week'] as const).map((r) => {
           const on = range === r;
@@ -123,7 +130,7 @@ export function StatsScreen({
             const doneH = d.sched ? Math.round((d.done / d.sched) * h) : 0;
             const isToday = d.key === today;
             return (
-              <Pressable key={d.key} style={styles.barCol} onPress={() => onPickDay(d.key, 'today')}>
+              <Pressable key={d.key} style={styles.barCol} onPress={() => onPickDay(d.key)}>
                 <View style={styles.barTrack}>
                   <View
                     style={[
@@ -166,7 +173,8 @@ export function StatsScreen({
           ))
         )}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -220,8 +228,10 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  title: { fontSize: 30, fontWeight: '700', color: C.text, letterSpacing: -0.5, marginBottom: 16 },
+  root: { flex: 1, backgroundColor: C.bg },
+  head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: C.text },
   segment: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   segBtn: { flex: 1, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
   segBtnOn: { backgroundColor: C.accentB },

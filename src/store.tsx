@@ -11,6 +11,7 @@ type Ctx = {
   saveDraft: (draft: Draft) => void; // add when no id, else update
   deleteTask: (id: string) => void;
   toggleDone: (id: string) => void;
+  toggleSubtask: (taskId: string, subId: string) => void;
   moveTask: (id: string, start: number) => void; // commit a drag
   updateSettings: (patch: Partial<Settings>) => void;
   clearCompleted: (dateKey?: string) => void; // all days if omitted
@@ -99,6 +100,16 @@ export function AppProvider({
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
   }, []);
 
+  const toggleSubtask = useCallback((taskId: string, subId: string) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, subtasks: t.subtasks.map((s) => (s.id === subId ? { ...s, done: !s.done } : s)) }
+          : t
+      )
+    );
+  }, []);
+
   const moveTask = useCallback((id: string, start: number) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, start } : t)));
   }, []);
@@ -164,6 +175,7 @@ export function AppProvider({
     saveDraft,
     deleteTask,
     toggleDone,
+    toggleSubtask,
     moveTask,
     updateSettings,
     clearCompleted,

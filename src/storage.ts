@@ -1,6 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Place, Settings, Tag, Task } from './types';
-import { DEFAULT_DAY_START, DEFAULT_DAY_END, DEFAULT_GAP_THRESHOLD } from './theme';
+import {
+  DEFAULT_DAY_START,
+  DEFAULT_DAY_END,
+  DEFAULT_GAP_THRESHOLD,
+  DEFAULT_TIME_PRESETS,
+  DEFAULT_DURATION_PRESETS,
+} from './theme';
 
 // ---------------------------------------------------------------------------
 // Persistence layer.
@@ -33,9 +39,12 @@ export const DEFAULT_SETTINGS: Settings = {
   dayStart: DEFAULT_DAY_START,
   dayEnd: DEFAULT_DAY_END,
   weekStart: 'mon',
+  clock: '24h',
   gapThreshold: DEFAULT_GAP_THRESHOLD,
   tags: DEFAULT_TAGS,
   places: DEFAULT_PLACES,
+  timePresets: DEFAULT_TIME_PRESETS,
+  durationPresets: DEFAULT_DURATION_PRESETS,
 };
 
 // Migrate a persisted task from older shapes (e.g. `tag` string) to the current one.
@@ -46,17 +55,21 @@ function migrateTask(raw: any): Task {
       : typeof raw.tag === 'string' && raw.tag
         ? raw.tag.toLowerCase()
         : null;
+  const type = raw.type === 'allday' || raw.type === 'todo' ? raw.type : 'planned';
   return {
     id: String(raw.id),
     title: raw.title ?? 'Untitled',
     emoji: raw.emoji ?? '📝',
     color: raw.color ?? '#5B9DF9',
+    type,
     start: raw.start ?? 0,
     dur: raw.dur ?? 30,
     done: !!raw.done,
     tagId: tagId ?? null,
     placeId: typeof raw.placeId === 'string' ? raw.placeId : null,
-    date: raw.date,
+    date: type === 'todo' ? null : (raw.date ?? null),
+    notes: typeof raw.notes === 'string' ? raw.notes : '',
+    subtasks: Array.isArray(raw.subtasks) ? raw.subtasks : [],
   };
 }
 
@@ -75,7 +88,7 @@ export const localRepository: Repository = {
       const raw = await AsyncStorage.getItem(K_TASKS);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((t) => t && t.date).map(migrateTask) : [];
+      return Array.isArray(parsed) ? parsed.filter((t) => t && t.id).map(migrateTask) : [];
     } catch {
       return [];
     }
@@ -98,6 +111,12 @@ export const localRepository: Repository = {
         // Never let a stored blob leave these empty/broken.
         tags: Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS,
         places: Array.isArray(parsed.places) ? parsed.places : DEFAULT_PLACES,
+        timePresets:
+          Array.isArray(parsed.timePresets) && parsed.timePresets.length ? parsed.timePresets : DEFAULT_TIME_PRESETS,
+        durationPresets:
+          Array.isArray(parsed.durationPresets) && parsed.durationPresets.length
+            ? parsed.durationPresets
+            : DEFAULT_DURATION_PRESETS,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -129,7 +148,7 @@ export const localRepository: Repository = {
 // The sample day from the prototype, seeded onto the first launch so a new
 // install opens looking exactly like the design.
 export function seedTasks(todayKey: string): Task[] {
-  const base: Omit<Task, 'id' | 'date'>[] = [
+  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks'>[] = [
     { title: 'Morning run', emoji: '🏃', color: '#5FD08A', start: 7 * 60, dur: 30, done: true, tagId: 'health', placeId: null },
     { title: 'Shower', emoji: '🚿', color: '#5B9DF9', start: 8 * 60, dur: 15, done: false, tagId: null, placeId: null },
     { title: 'Breakfast', emoji: '🍳', color: '#F2C14E', start: 8 * 60 + 15, dur: 30, done: false, tagId: null, placeId: null },
@@ -140,5 +159,12 @@ export function seedTasks(todayKey: string): Task[] {
     { title: 'Gym', emoji: '🏋️', color: '#F5A15C', start: 17 * 60 + 30, dur: 60, done: false, tagId: 'health', placeId: null },
     { title: 'Read', emoji: '📖', color: '#F072B6', start: 21 * 60, dur: 30, done: false, tagId: null, placeId: null },
   ];
-  return base.map((t, i) => ({ ...t, id: `seed-${i + 1}`, date: todayKey }));
+  return base.map((t, i) => ({
+    ...t,
+    id: `seed-${i + 1}`,
+    type: 'planned',
+    date: todayKey,
+    notes: '',
+    subtasks: [],
+  }));
 }

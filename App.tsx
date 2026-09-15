@@ -8,13 +8,15 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { C } from './src/theme';
 import { AppProvider, useApp } from './src/store';
-import { Draft } from './src/types';
+import { Draft, TaskType } from './src/types';
 import { todayKey } from './src/utils';
 import { TodayScreen } from './src/screens/TodayScreen';
+import { TodoScreen } from './src/screens/TodoScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 import { BottomNav, Tab } from './src/components/BottomNav';
 import { TaskEditorSheet } from './src/components/TaskEditorSheet';
-import { SettingsSheet } from './src/components/SettingsSheet';
+import { TaskInfoSheet } from './src/components/TaskInfoSheet';
 import { UpdateModal } from './src/components/UpdateModal';
 import { checkForUpdate, currentVersion, ReleaseInfo } from './src/updater';
 
@@ -41,17 +43,14 @@ function BackgroundGlow() {
 
 function Root() {
   const app = useApp();
-  const {
-    loaded, settings, tasksForDay, saveDraft, deleteTask, updateSettings, clearCompleted, clearAll,
-    addTag, renameTag, deleteTag, addPlace, renamePlace, deletePlace,
-  } = app;
+  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, toggleDone, toggleSubtask } = app;
 
   const [tab, setTab] = useState<Tab>('today');
+  const [overlay, setOverlay] = useState<'stats' | 'settings' | null>(null);
   const [selectedKey, setSelectedKey] = useState<string>(todayKey());
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [viewId, setViewId] = useState<string | null>(null);
 
-  // Self-update state.
   const [update, setUpdate] = useState<ReleaseInfo | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -62,15 +61,12 @@ function Root() {
     const r = await checkForUpdate();
     setChecking(false);
     if (r.available && r.release) {
-      setMenuOpen(false);
+      setOverlay(null);
       setUpdate(r.release);
       setUpdateOpen(true);
     } else if (manual) {
-      if (r.release) {
-        Alert.alert('Up to date', `You're on the latest version (v${r.current}).`);
-      } else {
-        Alert.alert('Check for updates', "Couldn't reach GitHub. Check your connection and try again.");
-      }
+      if (r.release) Alert.alert('Up to date', `You're on the latest version (v${r.current}).`);
+      else Alert.alert('Check for updates', "Couldn't reach GitHub. Check your connection and try again.");
     }
   }, []);
 
@@ -78,7 +74,6 @@ function Root() {
     if (loaded) SplashScreen.hideAsync().catch(() => {});
   }, [loaded]);
 
-  // One automatic check shortly after the app is ready.
   const didCheck = useRef(false);
   useEffect(() => {
     if (loaded && !didCheck.current) {
@@ -89,32 +84,36 @@ function Root() {
   }, [loaded, runUpdateCheck]);
 
   const openNew = useCallback(
-    (startMin?: number) => {
-      const dayTasks = tasksForDay(selectedKey);
-      const after = dayTasks.reduce((m, t) => Math.max(m, t.start + t.dur), settings.dayStart);
-      const start = Math.min(startMin ?? after, settings.dayEnd - 30);
+    (opts?: { startMin?: number; type?: TaskType }) => {
+      const type: TaskType = opts?.type ?? (tab === 'todo' ? 'todo' : 'planned');
+      const dayPlanned = tasksForDay(selectedKey).filter((t) => t.type === 'planned');
+      const after = dayPlanned.reduce((m, t) => Math.max(m, t.start + t.dur), settings.dayStart);
+      const start = Math.min(opts?.startMin ?? after, settings.dayEnd - 30);
       setDraft({
         title: '',
         emoji: '📝',
         color: '#5B9DF9',
+        type,
         start,
         dur: 30,
         done: false,
         tagId: null,
         placeId: null,
-        date: selectedKey,
+        date: type === 'todo' ? null : selectedKey,
+        notes: '',
+        subtasks: [],
       });
     },
-    [selectedKey, settings.dayStart, settings.dayEnd, tasksForDay]
+    [tab, selectedKey, settings.dayStart, settings.dayEnd, tasksForDay]
   );
 
-  const openEdit = useCallback(
-    (id: string) => {
-      const t = tasksForDay(selectedKey).find((x) => x.id === id);
+  const editFromInfo = useCallback(() => {
+    setViewId((id) => {
+      const t = id ? tasks.find((x) => x.id === id) : null;
       if (t) setDraft({ ...t });
-    },
-    [selectedKey, tasksForDay]
-  );
+      return null;
+    });
+  }, [tasks]);
 
   const patch = useCallback((p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d)), []);
   const save = useCallback(() => {
@@ -132,63 +131,80 @@ function Root() {
 
   if (!loaded) return <View style={styles.bg} />;
 
+  const viewTask = viewId ? tasks.find((t) => t.id === viewId) ?? null : null;
+
+  let content: React.ReactNode;
+  if (overlay === 'stats') {
+    content = (
+      <StatsScreen
+        onClose={() => setOverlay(null)}
+        onPickDay={(key) => {
+          setSelectedKey(key);
+          setTab('today');
+          setOverlay(null);
+        }}
+      />
+    );
+  } else if (overlay === 'settings') {
+    content = (
+      <SettingsScreen
+        onClose={() => setOverlay(null)}
+        onCheckUpdates={() => runUpdateCheck(true)}
+        checkingUpdates={checking}
+        currentVersion={curVer}
+      />
+    );
+  } else {
+    content = (
+      <>
+        {tab === 'today' ? (
+          <TodayScreen
+            selectedKey={selectedKey}
+            setSelectedKey={setSelectedKey}
+            onOpenStats={() => setOverlay('stats')}
+            onOpenSettings={() => setOverlay('settings')}
+            onNewTask={openNew}
+            onOpenInfo={setViewId}
+          />
+        ) : (
+          <TodoScreen onOpenInfo={setViewId} onOpenStats={() => setOverlay('stats')} onOpenSettings={() => setOverlay('settings')} />
+        )}
+        <BottomNav tab={tab} onTab={setTab} onAdd={() => openNew()} />
+      </>
+    );
+  }
+
   return (
     <View style={styles.bg}>
       <BackgroundGlow />
-      {tab === 'today' ? (
-        <TodayScreen
-          selectedKey={selectedKey}
-          setSelectedKey={setSelectedKey}
-          onOpenMenu={() => setMenuOpen(true)}
-          onNewTask={openNew}
-          onEditTask={openEdit}
-        />
-      ) : (
-        <StatsScreen
-          onPickDay={(key, t) => {
-            setSelectedKey(key);
-            setTab(t);
-          }}
-        />
-      )}
+      {content}
 
-      <BottomNav tab={tab} onTab={setTab} onAdd={() => openNew()} />
+      <TaskInfoSheet
+        task={viewTask}
+        tags={settings.tags}
+        places={settings.places}
+        clock={settings.clock}
+        onEdit={editFromInfo}
+        onToggleDone={() => viewTask && toggleDone(viewTask.id)}
+        onToggleSubtask={(subId) => viewTask && toggleSubtask(viewTask.id, subId)}
+        onClose={() => setViewId(null)}
+      />
 
       <TaskEditorSheet
         draft={draft}
         tags={settings.tags}
         places={settings.places}
-        dayStart={settings.dayStart}
-        dayEnd={settings.dayEnd}
+        clock={settings.clock}
+        weekStart={settings.weekStart}
+        timePresets={settings.timePresets}
+        durationPresets={settings.durationPresets}
         onPatch={patch}
         onSave={save}
         onDelete={del}
         onClose={() => setDraft(null)}
       />
 
-      <SettingsSheet
-        visible={menuOpen}
-        settings={settings}
-        currentVersion={curVer}
-        checkingUpdates={checking}
-        onCheckUpdates={() => runUpdateCheck(true)}
-        onPatch={updateSettings}
-        onClearCompleted={() => clearCompleted()}
-        onClearAll={clearAll}
-        onClose={() => setMenuOpen(false)}
-        addTag={addTag}
-        renameTag={renameTag}
-        deleteTag={deleteTag}
-        addPlace={addPlace}
-        renamePlace={renamePlace}
-        deletePlace={deletePlace}
-      />
-
-      <UpdateModal
-        release={updateOpen ? update : null}
-        currentVersion={curVer}
-        onClose={() => setUpdateOpen(false)}
-      />
+      <UpdateModal release={updateOpen ? update : null} currentVersion={curVer} onClose={() => setUpdateOpen(false)} />
 
       <StatusBar style="light" />
     </View>

@@ -11,44 +11,73 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Place, Tag, Task } from '../types';
+import { Clock, Place, Tag, Task } from '../types';
 import { C, PX } from '../theme';
 import { fmt, fmtDur, hexA, placeLabel, tagLabel } from '../utils';
 import { Pos } from '../layout';
+import { PlaceIcon } from './PlaceIcon';
 
 type Props = {
   task: Task;
   tags: Tag[];
   places: Place[];
+  clock: Clock;
   pos: Pos;
   isDragging: boolean;
   nowMin: number | null; // null when the viewed day is not today
   dayStart: number;
   dayEnd: number;
-  liveStart: number; // start minute to display (drag-aware)
+  liveStart: number;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, min: number) => void;
   onDragEnd: (id: string) => void;
-  onEdit: (id: string) => void;
+  onOpen: (id: string) => void;
   onToggle: (id: string) => void;
 };
 
-function TaskCardBase({
-  task,
-  tags,
-  places,
-  pos,
-  isDragging,
-  nowMin,
-  dayStart,
-  dayEnd,
-  liveStart,
-  onDragStart,
-  onDragMove,
-  onDragEnd,
-  onEdit,
-  onToggle,
-}: Props) {
+// Visual content of a card (icon + text + meta). Rendered once for the colored
+// card and again inside a clipped, grayscale-filtered overlay for the elapsed
+// portion (so a task straddling "now" is gray above the line, colored below).
+function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number; end: number; clock: Clock; tags: Tag[]; places: Place[] }) {
+  const color = task.color;
+  const tagTxt = tagLabel(tags, task.tagId);
+  const placeTxt = placeLabel(places, task.placeId);
+  return (
+    <>
+      <LinearGradient
+        colors={[color, hexA(color, 0.72)]}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={[styles.icon, { boxShadow: `0 5px 16px -3px ${hexA(color, 0.85)}, 0 0 0 1px ${hexA(color, 0.3)}` }]}>
+        <Text style={styles.iconTxt}>{task.emoji}</Text>
+      </LinearGradient>
+      <View style={styles.body}>
+        <Text numberOfLines={1} style={[styles.title, task.done && styles.strike]}>{task.title}</Text>
+        <Text numberOfLines={1} style={styles.time}>
+          {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
+        </Text>
+        {(!!tagTxt || !!placeTxt) && (
+          <View style={styles.metaRow}>
+            {!!tagTxt && (
+              <View style={[styles.chip, { backgroundColor: hexA(color, 0.15), borderColor: hexA(color, 0.28) }]}>
+                <Text style={[styles.chipTxt, { color }]}>{tagTxt}</Text>
+              </View>
+            )}
+            {!!placeTxt && (
+              <View style={[styles.chip, styles.placeChip]}>
+                <PlaceIcon size={10} color={C.muted} />
+                <Text style={styles.placeTxt}>{placeTxt}</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    </>
+  );
+}
+
+function TaskCardBase(props: Props) {
+  const { task, tags, places, clock, pos, isDragging, nowMin, dayStart, dayEnd, liveStart } = props;
   const topSV = useSharedValue(pos.top);
   const scale = useSharedValue(1);
   const origRef = useRef(task.start);
@@ -56,11 +85,8 @@ function TaskCardBase({
   const draggingRef = useRef(false);
 
   useEffect(() => {
-    if (isDragging) {
-      topSV.value = pos.top;
-    } else {
-      topSV.value = withTiming(pos.top, { duration: 200, easing: Easing.out(Easing.cubic) });
-    }
+    if (isDragging) topSV.value = pos.top;
+    else topSV.value = withTiming(pos.top, { duration: 200, easing: Easing.out(Easing.cubic) });
   }, [pos.top, isDragging, topSV]);
 
   const beginDrag = () => {
@@ -69,7 +95,7 @@ function TaskCardBase({
     lastMinRef.current = task.start;
     scale.value = withSpring(1.03, { damping: 18, stiffness: 260 });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    onDragStart(task.id);
+    props.onDragStart(task.id);
   };
   const moveDrag = (dy: number) => {
     if (!draggingRef.current) return;
@@ -77,35 +103,23 @@ function TaskCardBase({
     nm = Math.max(dayStart - 45, Math.min(dayEnd - 15, nm));
     if (nm !== lastMinRef.current) {
       lastMinRef.current = nm;
-      onDragMove(task.id, nm);
+      props.onDragMove(task.id, nm);
     }
   };
   const endDrag = () => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     scale.value = withSpring(1, { damping: 18, stiffness: 260 });
-    onDragEnd(task.id);
+    props.onDragEnd(task.id);
   };
-  const edit = () => onEdit(task.id);
+  const open = () => props.onOpen(task.id);
 
   const pan = Gesture.Pan()
     .activateAfterLongPress(320)
-    .onStart(() => {
-      'worklet';
-      runOnJS(beginDrag)();
-    })
-    .onUpdate((e) => {
-      'worklet';
-      runOnJS(moveDrag)(e.translationY);
-    })
-    .onFinalize(() => {
-      'worklet';
-      runOnJS(endDrag)();
-    });
-  const tap = Gesture.Tap().onEnd((_e, success) => {
-    'worklet';
-    if (success) runOnJS(edit)();
-  });
+    .onStart(() => { 'worklet'; runOnJS(beginDrag)(); })
+    .onUpdate((e) => { 'worklet'; runOnJS(moveDrag)(e.translationY); })
+    .onFinalize(() => { 'worklet'; runOnJS(endDrag)(); });
+  const tap = Gesture.Tap().onEnd((_e, ok) => { 'worklet'; if (ok) runOnJS(open)(); });
   const gesture = Gesture.Exclusive(pan, tap);
 
   const wrapStyle = useAnimatedStyle(() => ({ top: topSV.value }));
@@ -115,89 +129,38 @@ function TaskCardBase({
   const s = liveStart;
   const end = s + task.dur;
 
-  // Fully-elapsed tasks (today only) are desaturated and dimmed.
-  const isPast = nowMin != null && end <= nowMin && !isDragging;
+  // Elapsed fraction (today only): the portion above the now-line is grayscale.
+  let oh = 0;
+  if (nowMin != null && !isDragging) {
+    const frac = end <= nowMin ? 1 : s >= nowMin ? 0 : (nowMin - s) / task.dur;
+    oh = Math.round(frac * pos.h);
+  }
 
-  const tagTxt = tagLabel(tags, task.tagId);
-  const placeTxt = placeLabel(places, task.placeId);
-
-  const cardShadow = isPast
-    ? 'inset 0 0 0 1px rgba(255,255,255,0.05)'
-    : `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(
-        color,
-        isDragging ? 0.65 : 0.3
-      )}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
-
-  const iconColors: [string, string] = isPast
-    ? ['#34343c', '#26262c']
-    : [color, hexA(color, 0.72)];
+  const cardShadow = `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(color, isDragging ? 0.65 : 0.3)}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
 
   return (
     <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]}>
-      <Animated.View
-        style={[
-          styles.card,
-          cardAnim,
-          { minHeight: pos.h, boxShadow: cardShadow },
-          isPast && styles.pastCard,
-        ]}>
+      <Animated.View style={[styles.card, cardAnim, { minHeight: pos.h, boxShadow: cardShadow }]}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={styles.grab}>
-            <LinearGradient
-              colors={iconColors}
-              start={{ x: 0.1, y: 0 }}
-              end={{ x: 0.9, y: 1 }}
-              style={[
-                styles.icon,
-                !isPast && { boxShadow: `0 5px 16px -3px ${hexA(color, 0.85)}, 0 0 0 1px ${hexA(color, 0.3)}` },
-              ]}>
-              <Text style={styles.iconTxt}>{task.emoji}</Text>
-            </LinearGradient>
-            <View style={styles.body}>
-              <Text
-                numberOfLines={1}
-                style={[styles.title, (task.done || isPast) && styles.titleMuted, task.done && styles.strike]}>
-                {task.title}
-              </Text>
-              <Text numberOfLines={1} style={styles.time}>
-                {fmt(s)} – {fmt(end)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
-              </Text>
-              {(!!tagTxt || !!placeTxt) && (
-                <View style={styles.metaRow}>
-                  {!!tagTxt && (
-                    <View
-                      style={[
-                        styles.chip,
-                        isPast
-                          ? { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }
-                          : { backgroundColor: hexA(color, 0.15), borderColor: hexA(color, 0.28) },
-                      ]}>
-                      <Text style={[styles.chipTxt, { color: isPast ? C.muted : color }]}>{tagTxt}</Text>
-                    </View>
-                  )}
-                  {!!placeTxt && (
-                    <View style={[styles.chip, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }]}>
-                      <Text style={styles.placeTxt}>📍 {placeTxt}</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
+            <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} />
           </Animated.View>
         </GestureDetector>
 
         <Pressable
-          onPress={() => onToggle(task.id)}
+          onPress={() => props.onToggle(task.id)}
           hitSlop={8}
-          style={[
-            styles.check,
-            {
-              backgroundColor: task.done ? color : 'transparent',
-              boxShadow: `inset 0 0 0 2px ${task.done ? color : hexA(color, 0.5)}`,
-            },
-          ]}>
+          style={[styles.check, { backgroundColor: task.done ? color : 'transparent', boxShadow: `inset 0 0 0 2px ${task.done ? color : hexA(color, 0.5)}` }]}>
           {task.done && <Text style={styles.checkMark}>✓</Text>}
         </Pressable>
+
+        {/* Elapsed portion: desaturate + dim via blend overlays (no content copy). */}
+        {oh >= 2 && (
+          <>
+            <View pointerEvents="none" style={[styles.desat, { height: oh }]} />
+            <View pointerEvents="none" style={[styles.dim, { height: oh }]} />
+          </>
+        )}
       </Animated.View>
     </Animated.View>
   );
@@ -218,37 +181,23 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: C.card,
   },
-  pastCard: { filter: [{ grayscale: 1 }], opacity: 0.5, backgroundColor: '#131316' },
+  // 'saturation' blend with a neutral-gray fill desaturates the backdrop in
+  // this region (the elapsed part of the card); the dim adds the "past" fade.
+  desat: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#808080', mixBlendMode: 'saturation' },
+  dim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(11,11,13,0.32)' },
   grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  icon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  icon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 20 },
   body: { flex: 1, minWidth: 0 },
   title: { fontSize: 15.5, fontWeight: '600', letterSpacing: -0.2, color: C.text },
-  titleMuted: { color: '#7a7a82' },
   strike: { textDecorationLine: 'line-through', color: '#6a6a72' },
   time: { fontSize: 12.5, color: C.muted, marginTop: 3, fontVariant: ['tabular-nums'] },
   dur: { color: C.faint },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-  chip: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  chipTxt: { fontSize: 11, fontWeight: '600' },
-  placeTxt: { fontSize: 11, fontWeight: '600', color: C.textDim },
-  check: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 },
+  chip: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, borderWidth: 1 },
+  chipTxt: { fontSize: 10, fontWeight: '600' },
+  placeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' },
+  placeTxt: { fontSize: 10, fontWeight: '600', color: C.muted },
+  check: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   checkMark: { fontSize: 14, color: '#0b0b0d', fontWeight: '700' },
 });

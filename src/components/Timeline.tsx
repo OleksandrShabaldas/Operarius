@@ -1,28 +1,28 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Task, Tag, Place } from '../types';
+import { Clock, Task, Tag, Place } from '../types';
 import { C, TOPBAND } from '../theme';
 import { fmt } from '../utils';
 import { computeDayLayout } from '../layout';
 import { Hatch } from './Hatch';
 import { TaskCard } from './TaskCard';
 
-const BOTTOM_FILL = 220; // red hatch that extends the end-of-day band toward the screen bottom
-
 type Props = {
   tasks: Task[];
   tags: Tag[];
   places: Place[];
+  clock: Clock;
   dayStart: number;
   dayEnd: number;
   gapThreshold: number;
+  viewportH: number; // ScrollView height, so the end-of-day band can reach the screen bottom
   nowMin: number | null; // null when the viewed day is not today
   dragId: string | null;
   dragMin: number;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, min: number) => void;
   onDragEnd: (id: string) => void;
-  onEdit: (id: string) => void;
+  onOpen: (id: string) => void;
   onToggle: (id: string) => void;
   onAddAt: (startMin: number) => void;
 };
@@ -64,7 +64,7 @@ function HourTicks({
 }
 
 export function Timeline(props: Props) {
-  const { tasks, tags, places, dayStart, dayEnd, gapThreshold, nowMin, dragId, dragMin } = props;
+  const { tasks, tags, places, clock, dayStart, dayEnd, gapThreshold, viewportH, nowMin, dragId, dragMin } = props;
   const { sorted, pos, freeblocks, chips, botTop, H, yAt } = computeDayLayout(
     tasks,
     dayStart,
@@ -76,7 +76,10 @@ export function Timeline(props: Props) {
 
   const showNow = nowMin != null && nowMin >= dayStart && nowMin <= dayEnd;
   const empty = tasks.length === 0;
-  const contentH = H + BOTTOM_FILL;
+  // Content fills at least the viewport so the end-of-day hatch reaches the
+  // bottom of the screen with no black gap and no over-scroll (#16).
+  const contentH = Math.max(H + 100, viewportH);
+  const endHeight = contentH - botTop;
 
   return (
     <View style={{ height: contentH }}>
@@ -87,7 +90,7 @@ export function Timeline(props: Props) {
         radius={0}
         fadeSides="y"
         style={[styles.band, { top: 0, height: TOPBAND - 2 }]}>
-        <Text style={styles.bandTxt}>BEGINNING OF DAY · {fmt(dayStart)}</Text>
+        <Text style={styles.bandTxt}>BEGINNING OF DAY · {fmt(dayStart, clock)}</Text>
       </Hatch>
 
       <HourTicks dayStart={dayStart} dayEnd={dayEnd} yAt={yAt} />
@@ -132,6 +135,7 @@ export function Timeline(props: Props) {
           task={t}
           tags={tags}
           places={places}
+          clock={clock}
           pos={pos[t.id]}
           isDragging={dragId === t.id}
           liveStart={dragId === t.id ? dragMin : t.start}
@@ -141,25 +145,25 @@ export function Timeline(props: Props) {
           onDragStart={props.onDragStart}
           onDragMove={props.onDragMove}
           onDragEnd={props.onDragEnd}
-          onEdit={props.onEdit}
+          onOpen={props.onOpen}
           onToggle={props.onToggle}
         />
       ))}
 
-      {/* End-of-day band — full width, extends toward the bottom of the screen. */}
+      {/* End-of-day band — full width, extends to the bottom of the screen. */}
       <Hatch
         color="#ff5a64"
         opacity={0.16}
         radius={0}
         fadeSides="y"
-        style={[styles.endBand, { top: botTop, height: BOTTOM_FILL }]}>
-        <Text style={styles.endTxt}>END OF DAY · {fmt(dayEnd)}</Text>
+        style={[styles.endBand, { top: botTop, height: endHeight }]}>
+        <Text style={styles.endTxt}>END OF DAY · {fmt(dayEnd, clock)}</Text>
       </Hatch>
 
       {/* Now line */}
       {showNow && (
         <View style={[styles.nowLine, { top: yAt(nowMin!) }]}>
-          <Text style={styles.nowLabel}>{fmt(nowMin!)}</Text>
+          <Text style={styles.nowLabel}>{fmt(nowMin!, clock)}</Text>
           <View style={styles.nowDot} />
         </View>
       )}

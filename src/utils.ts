@@ -1,5 +1,5 @@
-import { MONTHS, WEEKDAYS_FULL } from './theme';
-import { Place, Tag, WeekStart } from './types';
+import { DOW, MONTHS, WEEKDAYS_FULL } from './theme';
+import { Clock, Place, Tag, WeekStart } from './types';
 
 // hex -> rgba string with alpha
 export function hexA(hex: string, a: number): string {
@@ -7,11 +7,12 @@ export function hexA(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
-// minutes-of-day -> "7:00 AM"
-export function fmt(min: number): string {
+// minutes-of-day -> "7:00 AM" (12h) or "07:00" (24h)
+export function fmt(min: number, clock: Clock = '12h'): string {
   min = ((min % 1440) + 1440) % 1440;
   const h = Math.floor(min / 60);
   const m = min % 60;
+  if (clock === '24h') return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   const ap = h < 12 ? 'AM' : 'PM';
   const hh = h % 12 || 12;
   return `${hh}:${String(m).padStart(2, '0')} ${ap}`;
@@ -114,4 +115,15 @@ export function tagLabel(tags: Tag[], id: string | null): string {
 export function placeLabel(places: Place[], id: string | null): string {
   const p = id ? places.find((x) => x.id === id) : null;
   return p ? p.name : '';
+}
+
+// "Today" / "Tomorrow" / "Yesterday" / "Tue, Sep 15"
+export function dateLabel(key: string | null): string {
+  if (!key) return 'No date';
+  const t = todayKey();
+  if (key === t) return 'Today';
+  if (key === addDays(t, 1)) return 'Tomorrow';
+  if (key === addDays(t, -1)) return 'Yesterday';
+  const d = dateFromKey(key);
+  return `${DOW[(d.getDay() + 6) % 7]}, ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 }

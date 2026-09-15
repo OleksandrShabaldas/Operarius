@@ -19,7 +19,7 @@ export type DayLayout = {
   yAt: (min: number) => number;
 };
 
-const META_H = 20; // extra height a tag/place row adds to a card
+const META_H = 26; // extra height a tag/place row adds to a card
 
 export function computeDayLayout(
   tasks: Task[],
@@ -54,13 +54,13 @@ export function computeDayLayout(
       const free = s - prevMin;
       if (free > gapThreshold) {
         const natural = Math.max(propTop, prevPx + GAP);
-        top = Math.max(natural, prevPx + MIN_FREE_H + 8);
+        top = Math.max(natural, prevPx + MIN_FREE_H + 12);
         freeblocks.push({
           key: `free-${prevMin}`,
           label: `${fmtDur(free)} free`,
           start: prevMin,
-          top: prevPx + 4,
-          height: top - prevPx - 8,
+          top: prevPx + 7,
+          height: top - prevPx - 14,
         });
       } else if (free > 0) {
         top = Math.max(propTop, prevPx + CHIPGAP);

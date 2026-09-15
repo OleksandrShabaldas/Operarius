@@ -6,14 +6,18 @@ export const PX = 1.3; // vertical pixels per minute (tighter than the prototype
 export const TOPBAND = 46; // "beginning of day" band height reserve
 export const BOTBAND = 46; // "end of day" band height reserve
 export const GAP = 8; // min vertical gap between stacked cards
-export const MINH = 58; // min card height
-export const CHIPGAP = 26; // gap reserved when a "x min" pill sits between cards
+export const MINH = 60; // min card height (no meta row)
+export const CHIPGAP = 20; // gap reserved when a "x min" pill sits between cards
 export const MIN_FREE_H = 46; // min height for a tappable "free" block
 
 // Default visible day window (overridable in Settings).
 export const DEFAULT_DAY_START = 7 * 60; // 07:00
 export const DEFAULT_DAY_END = 23 * 60; // 23:00
 export const DEFAULT_GAP_THRESHOLD = 15; // minutes
+
+// Default quick-pick presets (overridable in Settings).
+export const DEFAULT_TIME_PRESETS = [6 * 60, 8 * 60, 9 * 60, 12 * 60, 13 * 60, 17 * 60, 20 * 60];
+export const DEFAULT_DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
 
 // Palette -------------------------------------------------------------------
 export const COLORS = [

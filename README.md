@@ -10,22 +10,29 @@ Gesture Handler, and react-native-svg.
 
 ## Features
 
-- **Day timeline** — hour grid from your day-start to day-end, "beginning/end of
-  day" bands, a live "now" line, and an elapsed dimming overlay on past time.
-- **Tasks** — emoji icon, color, title, start time, duration, and an optional
-  tag. Long-press a card to **drag it to a new time** (snaps to 5 min); tap to
-  edit; tap the checkbox to complete (with haptics).
-- **Free blocks & gaps** — empty stretches show a tappable "＋ Create a task"
-  block; tight gaps show a "x min" chip.
+- **Day timeline** — hour grid from your day-start to day-end, full-bleed
+  "beginning/end of day" bands, and a live "now" line. Hour ticks and the now-line
+  are mapped through the real card layout so they stay aligned. Elapsed tasks
+  desaturate and dim; upcoming ones stay in full color.
+- **Tasks** — emoji icon, color, title, start time, duration, an optional tag (or
+  sub-tag), and a place. Long-press a card to **drag it to a new time** (snaps to
+  5 min); tap to edit; tap the checkbox to complete (with haptics).
+- **Free blocks & gaps** — larger gaps show a tappable "＋ Create a task" block
+  (diagonal hatch feathered on all sides); small gaps show a compact "x min" pill.
+  The pill-vs-block threshold is configurable in Settings.
 - **Per-day scheduling** — a week strip to pick any day (tap), swipe the strip to
   change weeks, and dots mark days that have tasks.
-- **Task editor** — a bottom sheet with start/duration steppers, tag chips, a
-  color palette, and an icon picker.
+- **Task editor** — a bottom sheet with start/duration steppers, a tag/sub-tag
+  picker, a place picker, and a combined icon+color tile that opens a picker popup.
+- **Tags, sub-tags & places** — create your own in Settings; tags can have
+  sub-tags, and places show with a 📍 marker on cards.
 - **Stats** — completion ring, scheduled/completed/free hours, a scheduled-per-day
   bar chart (tap a bar to jump to that day), and time-by-tag bars.
-- **Settings** (the ☰ menu) — configurable day window, week-start day (Mon/Sun),
-  and data management (clear completed / delete all).
+- **Settings** (the ☰ menu) — day window, gap-pill threshold, week-start day,
+  tag/sub-tag and place management, in-app update check, and data management.
 - **Offline & persistent** — everything is stored on-device with AsyncStorage.
+- **Self-updating** — checks GitHub Releases on launch and from Settings, then
+  downloads and installs newer APKs.
 
 ## Run it on your Android phone (fastest)
 

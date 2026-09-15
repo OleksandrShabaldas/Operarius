@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Draft, Settings, Task } from './types';
 import { DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
+import { COLORS } from './theme';
 import { genId, todayKey } from './utils';
 
 type Ctx = {
@@ -20,6 +21,7 @@ type Ctx = {
   // Tags & places
   addTag: (name: string, parentId?: string | null) => void;
   renameTag: (id: string, name: string) => void;
+  setTagColor: (id: string, color: string) => void;
   deleteTag: (id: string) => void;
   addPlace: (name: string) => void;
   renamePlace: (id: string, name: string) => void;
@@ -131,13 +133,22 @@ export function AppProvider({
   const addTag = useCallback((name: string, parentId: string | null = null) => {
     const n = name.trim();
     if (!n) return;
-    setSettings((prev) => ({ ...prev, tags: [...prev.tags, { id: genId(), name: n, parentId }] }));
+    setSettings((prev) => {
+      const color = parentId
+        ? prev.tags.find((t) => t.id === parentId)?.color || '#5B9DF9'
+        : COLORS[prev.tags.filter((t) => !t.parentId).length % COLORS.length];
+      return { ...prev, tags: [...prev.tags, { id: genId(), name: n, parentId, color }] };
+    });
   }, []);
 
   const renameTag = useCallback((id: string, name: string) => {
     const n = name.trim();
     if (!n) return;
     setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, name: n } : t)) }));
+  }, []);
+
+  const setTagColor = useCallback((id: string, color: string) => {
+    setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, color } : t)) }));
   }, []);
 
   const deleteTag = useCallback((id: string) => {
@@ -183,6 +194,7 @@ export function AppProvider({
     clearAll,
     addTag,
     renameTag,
+    setTagColor,
     deleteTag,
     addPlace,
     renamePlace,

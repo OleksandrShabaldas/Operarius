@@ -25,7 +25,7 @@ export type WeekStart = 'mon' | 'sun';
 export type Clock = '12h' | '24h';
 
 // User-defined tag. Top-level when parentId is null, otherwise a sub-tag.
-export type Tag = { id: string; name: string; parentId: string | null };
+export type Tag = { id: string; name: string; parentId: string | null; color: string };
 
 // User-defined place, shown like a tag but with a location marker.
 export type Place = { id: string; name: string };

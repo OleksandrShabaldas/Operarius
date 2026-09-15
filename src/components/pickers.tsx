@@ -1,10 +1,97 @@
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { C, MONTHS } from '../theme';
 import { Clock } from '../types';
 import { dateFromKey, dateKey, fmt, fmtDur, weekdayLetters } from '../utils';
 import { CenterPopup as Popup } from './Overlay';
 import { Tappable } from './anim';
+
+const ITEM_H = 44;
+const WHEEL_VISIBLE = 5;
+
+// A single scrollable wheel column — scroll to select, snaps to the centered
+// item and reports it live. Edges fade into the popup background.
+function WheelColumn({
+  values,
+  value,
+  format,
+  onChange,
+  width,
+}: {
+  values: number[];
+  value: number;
+  format: (v: number) => string;
+  onChange: (v: number) => void;
+  width?: number;
+}) {
+  const ref = useRef<ScrollView>(null);
+  const nearestIndex = () => {
+    let bi = 0;
+    let bd = Infinity;
+    values.forEach((v, i) => {
+      const d = Math.abs(v - value);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    });
+    return bi;
+  };
+  const last = useRef(value);
+  useEffect(() => {
+    if (value !== last.current) {
+      last.current = value;
+      const i = nearestIndex();
+      ref.current?.scrollTo({ y: i * ITEM_H, animated: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  useEffect(() => {
+    const i = nearestIndex();
+    const t = setTimeout(() => ref.current?.scrollTo({ y: i * ITEM_H, animated: false }), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const i = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
+    const clamped = Math.max(0, Math.min(values.length - 1, i));
+    const v = values[clamped];
+    if (v !== last.current) {
+      last.current = v;
+      onChange(v);
+    }
+  };
+
+  return (
+    <View style={[styles.wheel, width != null ? { width } : null]}>
+      <ScrollView
+        ref={ref}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_H}
+        decelerationRate="fast"
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        contentContainerStyle={{ paddingVertical: ITEM_H * 2 }}>
+        {values.map((v) => (
+          <View key={v} style={styles.wheelItem}>
+            <Text style={[styles.wheelTxt, v === value && styles.wheelTxtOn]}>{format(v)}</Text>
+          </View>
+        ))}
+      </ScrollView>
+      <View pointerEvents="none" style={styles.wheelCenter} />
+      <LinearGradient pointerEvents="none" colors={[C.sheet, C.sheet + '00']} style={[styles.wheelFade, { top: 0 }]} />
+      <LinearGradient pointerEvents="none" colors={[C.sheet + '00', C.sheet]} style={[styles.wheelFade, { bottom: 0 }]} />
+    </View>
+  );
+}
+
+function range(from: number, to: number, step: number): number[] {
+  const out: number[] = [];
+  for (let v = from; v <= to; v += step) out.push(v);
+  return out;
+}
 
 // ---- Reusable centered popup ---------------------------------------------
 export function CenterPopup({
@@ -29,19 +116,6 @@ export function CenterPopup({
   );
 }
 
-function Stepper({ value, onDown, onUp }: { value: string; onDown: () => void; onUp: () => void }) {
-  return (
-    <View style={styles.stepCtrl}>
-      <Pressable onPress={onDown} style={styles.stepBtn} hitSlop={8}>
-        <Text style={styles.stepBtnTxt}>−</Text>
-      </Pressable>
-      <Text style={styles.stepVal}>{value}</Text>
-      <Pressable onPress={onUp} style={styles.stepBtn} hitSlop={8}>
-        <Text style={styles.stepBtnTxt}>＋</Text>
-      </Pressable>
-    </View>
-  );
-}
 
 // ---- Time-of-day picker ---------------------------------------------------
 export function TimePickerPopup({
@@ -67,11 +141,9 @@ export function TimePickerPopup({
 }) {
   return (
     <CenterPopup visible={visible} title={title} onClose={onClose}>
-      <Stepper
-        value={fmt(value, clock)}
-        onDown={() => onChange(Math.max(min, value - 5))}
-        onUp={() => onChange(Math.min(max, value + 5))}
-      />
+      <View style={styles.wheelRow}>
+        <WheelColumn values={range(min, max, 5)} value={value} format={(v) => fmt(v, clock)} onChange={onChange} width={160} />
+      </View>
       {presets.length > 0 && <Text style={styles.section}>PRESETS</Text>}
       <View style={styles.chipWrap}>
         {presets.map((p) => (
@@ -100,7 +172,9 @@ export function DurationPickerPopup({
 }) {
   return (
     <CenterPopup visible={visible} title="Duration" onClose={onClose}>
-      <Stepper value={fmtDur(value)} onDown={() => onChange(Math.max(5, value - 5))} onUp={() => onChange(value + 5)} />
+      <View style={styles.wheelRow}>
+        <WheelColumn values={range(5, 480, 5)} value={value} format={fmtDur} onChange={onChange} width={160} />
+      </View>
       {presets.length > 0 && <Text style={styles.section}>PRESETS</Text>}
       <View style={styles.chipWrap}>
         {presets.map((p) => (
@@ -254,6 +328,13 @@ const styles = StyleSheet.create({
   stepVal: { flex: 1, textAlign: 'center', fontSize: 22, fontWeight: '700', color: C.text, fontVariant: ['tabular-nums'] },
   section: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 16, marginBottom: 9 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  wheelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, paddingVertical: 4 },
+  wheel: { height: ITEM_H * WHEEL_VISIBLE, overflow: 'hidden', position: 'relative' },
+  wheelItem: { height: ITEM_H, alignItems: 'center', justifyContent: 'center' },
+  wheelTxt: { fontSize: 19, fontWeight: '600', color: C.faint, fontVariant: ['tabular-nums'] },
+  wheelTxtOn: { color: C.text, fontWeight: '700' },
+  wheelCenter: { position: 'absolute', left: 0, right: 0, top: ITEM_H * 2, height: ITEM_H, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  wheelFade: { position: 'absolute', left: 0, right: 0, height: ITEM_H * 1.8 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)' },
   chipOn: { backgroundColor: C.accentB },
   chipTxt: { fontSize: 13, fontWeight: '600', color: C.textDim, fontVariant: ['tabular-nums'] },

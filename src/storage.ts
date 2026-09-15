@@ -23,11 +23,11 @@ const K_SETTINGS = 'operarius.settings.v1';
 const K_SEEDED = 'operarius.seeded.v1';
 
 export const DEFAULT_TAGS: Tag[] = [
-  { id: 'work', name: 'Work', parentId: null },
-  { id: 'focus', name: 'Focus', parentId: null },
-  { id: 'health', name: 'Health', parentId: null },
-  { id: 'personal', name: 'Personal', parentId: null },
-  { id: 'errand', name: 'Errand', parentId: null },
+  { id: 'work', name: 'Work', parentId: null, color: '#7C7CF0' },
+  { id: 'focus', name: 'Focus', parentId: null, color: '#5B9DF9' },
+  { id: 'health', name: 'Health', parentId: null, color: '#5FD08A' },
+  { id: 'personal', name: 'Personal', parentId: null, color: '#4FD1C5' },
+  { id: 'errand', name: 'Errand', parentId: null, color: '#F5A15C' },
 ];
 
 export const DEFAULT_PLACES: Place[] = [
@@ -109,7 +109,10 @@ export const localRepository: Repository = {
         ...DEFAULT_SETTINGS,
         ...parsed,
         // Never let a stored blob leave these empty/broken.
-        tags: Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS,
+        tags: (Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS).map((t: Tag) => ({
+          ...t,
+          color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
+        })),
         places: Array.isArray(parsed.places) ? parsed.places : DEFAULT_PLACES,
         timePresets:
           Array.isArray(parsed.timePresets) && parsed.timePresets.length ? parsed.timePresets : DEFAULT_TIME_PRESETS,

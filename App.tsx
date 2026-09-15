@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, BackHandler, StyleSheet, View } from 'react-native';
 import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -74,6 +74,23 @@ function Root() {
   useEffect(() => {
     if (loaded) SplashScreen.hideAsync().catch(() => {});
   }, [loaded]);
+
+  // Android hardware back: close overlays / return to Today before exiting.
+  // (Modals — editor, info, pickers — consume back via their own onRequestClose.)
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (overlay) {
+        setOverlay(null);
+        return true;
+      }
+      if (tab !== 'today') {
+        setTab('today');
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [overlay, tab]);
 
   const didCheck = useRef(false);
   useEffect(() => {

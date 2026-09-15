@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, EMOJIS, C } from '../theme';
 import { Clock, Draft, Place, Tag, TaskType } from '../types';
-import { dateLabel, fmt, fmtDur, genId, hexA, tagLabel, todayKey } from '../utils';
+import { dateLabel, fmt, fmtDur, findTag, genId, hexA, todayKey } from '../utils';
 import { PlaceIcon } from './PlaceIcon';
 import { DatePickerPopup, DurationPickerPopup, SelectPopup, TimePickerPopup } from './pickers';
 import { BottomSheet, CenterPopup } from './Overlay';
@@ -59,11 +59,15 @@ export function TaskEditorSheet({
   const isEditing = !!d?.id;
   const end = d ? d.start + d.dur : 0;
 
-  const tagOptions = tags.map((t) => ({
-    id: t.id,
-    label: t.parentId ? '↳ ' + t.name : t.name,
-    sub: t.parentId ? tagLabel(tags, t.parentId) : undefined,
-  }));
+  // Group sub-tags under their parent so both are selectable in the picker.
+  const tagOptions: { id: string; label: string }[] = [];
+  tags
+    .filter((t) => !t.parentId)
+    .forEach((top) => {
+      tagOptions.push({ id: top.id, label: top.name });
+      tags.filter((t) => t.parentId === top.id).forEach((sub) => tagOptions.push({ id: sub.id, label: '    ↳  ' + sub.name }));
+    });
+  const selTag = d ? findTag(tags, d.tagId) : null;
 
   const addSubtask = () => d && onPatch({ subtasks: [...d.subtasks, { id: genId(), title: '', done: false }] });
   const patchSubtask = (id: string, title: string) =>
@@ -125,8 +129,8 @@ export function TaskEditorSheet({
             <View style={styles.cardRow}>
               <Tappable style={styles.selCard} onPress={() => setPicker('tag')}>
                 <Text style={styles.selLabel}>TAG</Text>
-                <Text style={[styles.selVal, { color: d.tagId ? d.color : C.faint }]} numberOfLines={1}>
-                  {d.tagId ? tagLabel(tags, d.tagId) : 'Select tag'}
+                <Text style={[styles.selVal, { color: selTag ? selTag.color : C.faint }]} numberOfLines={1}>
+                  {selTag ? selTag.name : 'Select tag'}
                 </Text>
               </Tappable>
               <Tappable style={styles.selCard} onPress={() => setPicker('place')}>

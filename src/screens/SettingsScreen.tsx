@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { C } from '../theme';
+import { C, COLORS } from '../theme';
 import { Tag } from '../types';
 import { useApp } from '../store';
 import { fmt, fmtDur } from '../utils';
 import { TextPromptModal } from '../components/TextPromptModal';
 import { PlaceIcon } from '../components/PlaceIcon';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
+import { CenterPopup } from '../components/Overlay';
 import { Tappable } from '../components/anim';
 
 const Pressable = Tappable; // every tappable control gets press feedback
@@ -39,11 +40,24 @@ export function SettingsScreen({
 }) {
   const insets = useSafeAreaInsets();
   const app = useApp();
-  const { settings, updateSettings, clearCompleted, clearAll, addTag, renameTag, deleteTag, addPlace, renamePlace, deletePlace } = app;
+  const { settings, updateSettings, clearCompleted, clearAll, addTag, renameTag, setTagColor, deleteTag, addPlace, renamePlace, deletePlace } = app;
   const [cat, setCat] = useState<Category | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [colorPick, setColorPick] = useState<string | null>(null);
   const [addPreset, setAddPreset] = useState<'time' | 'dur' | null>(null);
   const [tempPreset, setTempPreset] = useState(12 * 60);
+
+  // Back inside a category returns to the category list (App closes the screen).
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (cat) {
+        setCat(null);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [cat]);
 
   const confirm = (title: string, msg: string, action: () => void) =>
     Alert.alert(title, msg, [
@@ -125,6 +139,7 @@ export function SettingsScreen({
             {topTags.map((tag: Tag) => (
               <View key={tag.id} style={styles.manageBlock}>
                 <View style={styles.manageRow}>
+                  <Pressable onPress={() => setColorPick(tag.id)} style={[styles.tagSwatch, { backgroundColor: tag.color }]} />
                   <Pressable style={styles.manageName} onPress={() => setPrompt({ title: 'Rename tag', initial: tag.name, submitLabel: 'Save', onSubmit: (t) => renameTag(tag.id, t) })}>
                     <Text style={styles.manageNameTxt}>{tag.name}</Text>
                   </Pressable>
@@ -269,6 +284,25 @@ export function SettingsScreen({
           setAddPreset(null);
         }}
       />
+
+      <CenterPopup open={colorPick != null} onClose={() => setColorPick(null)}>
+        <Text style={styles.colorTitle}>Tag color</Text>
+        <View style={styles.colorWrap}>
+          {COLORS.map((c) => {
+            const on = settings.tags.find((t) => t.id === colorPick)?.color === c;
+            return (
+              <Pressable
+                key={c}
+                onPress={() => {
+                  if (colorPick) setTagColor(colorPick, c);
+                  setColorPick(null);
+                }}
+                style={[styles.colorSwatch, { backgroundColor: c, boxShadow: on ? `0 0 0 3px ${C.sheet}, 0 0 0 5px ${c}` : undefined }]}
+              />
+            );
+          })}
+        </View>
+      </CenterPopup>
     </View>
   );
 }
@@ -313,7 +347,11 @@ const styles = StyleSheet.create({
   segTxt: { fontSize: 14, fontWeight: '600' },
   manageBlock: { marginBottom: 8 },
   manageRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tagSwatch: { width: 34, height: 34, borderRadius: 10 },
   manageName: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
+  colorTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 16 },
+  colorWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
+  colorSwatch: { width: 38, height: 38, borderRadius: 19 },
   placeName: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   manageNameTxt: { fontSize: 15, fontWeight: '600', color: C.text },
   smallBtn: { paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)' },

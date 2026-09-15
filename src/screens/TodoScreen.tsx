@@ -7,7 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Task } from '../types';
 import { useApp } from '../store';
-import { hexA, tagLabel } from '../utils';
+import { findTag, hexA } from '../utils';
+import { Tag } from '../types';
 import { stagger, Tappable } from '../components/anim';
 
 export function TodoScreen({
@@ -50,13 +51,13 @@ export function TodoScreen({
         )}
         {open.map((t, i) => (
           <Animated.View key={t.id} entering={stagger(i)}>
-            <TodoRow task={t} tagName={tagLabel(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+            <TodoRow task={t} tag={findTag(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
           </Animated.View>
         ))}
         {done.length > 0 && <Text style={styles.section}>COMPLETED · {done.length}</Text>}
         {done.map((t, i) => (
           <Animated.View key={t.id} entering={stagger(open.length + i)}>
-            <TodoRow task={t} tagName={tagLabel(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+            <TodoRow task={t} tag={findTag(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
           </Animated.View>
         ))}
       </ScrollView>
@@ -64,7 +65,8 @@ export function TodoScreen({
   );
 }
 
-function TodoRow({ task, tagName, onToggle, onOpen }: { task: Task; tagName: string; onToggle: () => void; onOpen: () => void }) {
+function TodoRow({ task, tag, onToggle, onOpen }: { task: Task; tag: Tag | null; onToggle: () => void; onOpen: () => void }) {
+  const tagColor = tag?.color || task.color;
   const subCount = task.subtasks.length;
   const subDone = task.subtasks.filter((s) => s.done).length;
   return (
@@ -78,9 +80,9 @@ function TodoRow({ task, tagName, onToggle, onOpen }: { task: Task; tagName: str
       <View style={{ flex: 1 }}>
         <Text style={[styles.rowTitle, task.done && styles.strike]} numberOfLines={1}>{task.title}</Text>
         <View style={styles.metaRow}>
-          {!!tagName && (
-            <View style={[styles.chip, { backgroundColor: hexA(task.color, 0.15) }]}>
-              <Text style={[styles.chipTxt, { color: task.color }]}>{tagName}</Text>
+          {!!tag && (
+            <View style={[styles.chip, { backgroundColor: hexA(tagColor, 0.15) }]}>
+              <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
             </View>
           )}
           {subCount > 0 && <Text style={styles.subCount}>☑ {subDone}/{subCount}</Text>}

@@ -87,8 +87,7 @@ export function Timeline(props: Props) {
       <Hatch
         color="#ff5a64"
         opacity={0.16}
-        radius={0}
-        fadeSides="y"
+        radius={13}
         style={[styles.band, { top: 0, height: TOPBAND - 2 }]}>
         <Text style={styles.bandTxt}>BEGINNING OF DAY · {fmt(dayStart, clock)}</Text>
       </Hatch>
@@ -155,8 +154,7 @@ export function Timeline(props: Props) {
       <Hatch
         color="#ff5a64"
         opacity={0.16}
-        radius={0}
-        fadeSides="y"
+        radius={13}
         style={[styles.endBand, { top: botTop, height: endHeight }]}>
         <Text style={styles.endTxt}>END OF DAY · {fmt(dayEnd, clock)}</Text>
       </Hatch>
@@ -175,16 +173,16 @@ export function Timeline(props: Props) {
 const styles = StyleSheet.create({
   band: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: 56,
+    right: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bandTxt: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.5, color: C.band },
   endBand: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: 56,
+    right: 16,
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 14,

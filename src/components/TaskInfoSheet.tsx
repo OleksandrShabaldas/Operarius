@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Clock, Place, Tag, Task } from '../types';
-import { fmt, fmtDur, hexA, dateLabel, placeLabel, tagLabel } from '../utils';
+import { fmt, fmtDur, hexA, dateLabel, findTag, placeLabel } from '../utils';
 import { PlaceIcon } from './PlaceIcon';
 import { BottomSheet } from './Overlay';
 import { Tappable } from './anim';
@@ -33,7 +33,8 @@ export function TaskInfoSheet({
   if (task) tRef.current = task;
   const t = task ?? tRef.current;
 
-  const tagTxt = t ? tagLabel(tags, t.tagId) : '';
+  const tag = t ? findTag(tags, t.tagId) : null;
+  const tagColor = tag?.color || t?.color || C.accentA;
   const placeTxt = t ? placeLabel(places, t.placeId) : '';
   const typeLabel = t?.type === 'allday' ? 'All-day' : t?.type === 'todo' ? 'To-do' : 'Planned';
   const doneCount = t ? t.subtasks.filter((s) => s.done).length : 0;
@@ -57,11 +58,11 @@ export function TaskInfoSheet({
           {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
           {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} />}
 
-          {(!!tagTxt || !!placeTxt) && (
+          {(!!tag || !!placeTxt) && (
             <View style={styles.metaRow}>
-              {!!tagTxt && (
-                <View style={[styles.chip, { backgroundColor: hexA(t.color, 0.15), borderColor: hexA(t.color, 0.28) }]}>
-                  <Text style={[styles.chipTxt, { color: t.color }]}>{tagTxt}</Text>
+              {!!tag && (
+                <View style={[styles.chip, { backgroundColor: hexA(tagColor, 0.15), borderColor: hexA(tagColor, 0.28) }]}>
+                  <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
                 </View>
               )}
               {!!placeTxt && (

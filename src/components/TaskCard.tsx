@@ -13,7 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Place, Tag, Task } from '../types';
 import { C, PX } from '../theme';
-import { fmt, fmtDur, hexA, placeLabel, tagLabel } from '../utils';
+import { fmt, fmtDur, findTag, hexA, placeLabel } from '../utils';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
 import { stagger, Tappable } from './anim';
@@ -42,7 +42,8 @@ type Props = {
 // portion (so a task straddling "now" is gray above the line, colored below).
 function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number; end: number; clock: Clock; tags: Tag[]; places: Place[] }) {
   const color = task.color;
-  const tagTxt = tagLabel(tags, task.tagId);
+  const tag = findTag(tags, task.tagId);
+  const tagColor = tag?.color || color;
   const placeTxt = placeLabel(places, task.placeId);
   return (
     <>
@@ -58,11 +59,11 @@ function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number
         <Text numberOfLines={1} style={styles.time}>
           {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
         </Text>
-        {(!!tagTxt || !!placeTxt) && (
+        {(!!tag || !!placeTxt) && (
           <View style={styles.metaRow}>
-            {!!tagTxt && (
-              <View style={[styles.chip, { backgroundColor: hexA(color, 0.15), borderColor: hexA(color, 0.28) }]}>
-                <Text style={[styles.chipTxt, { color }]}>{tagTxt}</Text>
+            {!!tag && (
+              <View style={[styles.chip, { backgroundColor: hexA(tagColor, 0.15), borderColor: hexA(tagColor, 0.28) }]}>
+                <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
               </View>
             )}
             {!!placeTxt && (
@@ -131,12 +132,19 @@ function TaskCardBase(props: Props) {
   const s = liveStart;
   const end = s + task.dur;
 
-  // Elapsed fraction (today only): the portion above the now-line is grayscale.
+  // Visual state:
+  //  • done            → fully grayscale (a touch darker once it's in the past)
+  //  • in-progress     → the elapsed portion grayscales (progress)
+  //  • past + not done → "Missed" (kept in color, red badge)
+  const past = nowMin != null && end <= nowMin;
+  const inProgress = nowMin != null && s < nowMin && nowMin < end;
+  const missed = !task.done && past;
   let oh = 0;
-  if (nowMin != null && !isDragging) {
-    const frac = end <= nowMin ? 1 : s >= nowMin ? 0 : (nowMin - s) / task.dur;
-    oh = Math.round(frac * pos.h);
+  if (!isDragging) {
+    if (task.done) oh = pos.h;
+    else if (inProgress) oh = Math.round(((nowMin! - s) / task.dur) * pos.h);
   }
+  const dimAlpha = task.done ? (past ? 0.46 : 0.2) : 0.32;
 
   const cardShadow = `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(color, isDragging ? 0.65 : 0.3)}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
 
@@ -157,12 +165,18 @@ function TaskCardBase(props: Props) {
           {task.done && <Text style={styles.checkMark}>✓</Text>}
         </Tappable>
 
-        {/* Elapsed portion: desaturate + dim via blend overlays (no content copy). */}
+        {/* Grayscale + dim via blend overlays (no content copy). */}
         {oh >= 2 && (
           <>
             <View pointerEvents="none" style={[styles.desat, { height: oh }]} />
-            <View pointerEvents="none" style={[styles.dim, { height: oh }]} />
+            <View pointerEvents="none" style={[styles.dim, { height: oh, backgroundColor: `rgba(11,11,13,${dimAlpha})` }]} />
           </>
+        )}
+
+        {missed && (
+          <View pointerEvents="none" style={styles.missed}>
+            <Text style={styles.missedTxt}>Missed</Text>
+          </View>
         )}
       </Animated.View>
     </Animated.View>
@@ -188,6 +202,8 @@ const styles = StyleSheet.create({
   // this region (the elapsed part of the card); the dim adds the "past" fade.
   desat: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#808080', mixBlendMode: 'saturation' },
   dim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(11,11,13,0.32)' },
+  missed: { position: 'absolute', top: 8, right: 44, backgroundColor: 'rgba(255,90,95,0.16)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  missedTxt: { fontSize: 9.5, fontWeight: '800', color: '#ff5a5f', letterSpacing: 0.4 },
   grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },
   icon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 20 },

@@ -10,6 +10,7 @@ import Animated, {
   ZoomIn,
   ZoomOut,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -31,6 +32,7 @@ export function BottomSheet({
   avoidKeyboard?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
 }) {
+  const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(open);
   useEffect(() => {
     if (open) {
@@ -52,7 +54,7 @@ export function BottomSheet({
           'worklet';
           if (f) runOnJS(setMounted)(false);
         })}
-        style={[styles.sheet, height != null ? { height } : null, contentStyle]}>
+        style={[styles.sheet, { paddingBottom: insets.bottom + 24 }, height != null ? { height } : null, contentStyle]}>
         <View style={styles.handle} />
         {children}
       </Animated.View>

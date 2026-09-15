@@ -41,7 +41,10 @@ function BackgroundGlow() {
 
 function Root() {
   const app = useApp();
-  const { loaded, settings, tasksForDay, saveDraft, deleteTask, updateSettings, clearCompleted, clearAll } = app;
+  const {
+    loaded, settings, tasksForDay, saveDraft, deleteTask, updateSettings, clearCompleted, clearAll,
+    addTag, renameTag, deleteTag, addPlace, renamePlace, deletePlace,
+  } = app;
 
   const [tab, setTab] = useState<Tab>('today');
   const [selectedKey, setSelectedKey] = useState<string>(todayKey());
@@ -97,7 +100,8 @@ function Root() {
         start,
         dur: 30,
         done: false,
-        tag: '',
+        tagId: null,
+        placeId: null,
         date: selectedKey,
       });
     },
@@ -152,6 +156,8 @@ function Root() {
 
       <TaskEditorSheet
         draft={draft}
+        tags={settings.tags}
+        places={settings.places}
         dayStart={settings.dayStart}
         dayEnd={settings.dayEnd}
         onPatch={patch}
@@ -170,6 +176,12 @@ function Root() {
         onClearCompleted={() => clearCompleted()}
         onClearAll={clearAll}
         onClose={() => setMenuOpen(false)}
+        addTag={addTag}
+        renameTag={renameTag}
+        deleteTag={deleteTag}
+        addPlace={addPlace}
+        renamePlace={renamePlace}
+        deletePlace={deletePlace}
       />
 
       <UpdateModal

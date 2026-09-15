@@ -16,6 +16,13 @@ type Ctx = {
   clearCompleted: (dateKey?: string) => void; // all days if omitted
   clearDay: (dateKey: string) => void;
   clearAll: () => void;
+  // Tags & places
+  addTag: (name: string, parentId?: string | null) => void;
+  renameTag: (id: string, name: string) => void;
+  deleteTag: (id: string) => void;
+  addPlace: (name: string) => void;
+  renamePlace: (id: string, name: string) => void;
+  deletePlace: (id: string) => void;
 };
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -31,6 +38,8 @@ export function AppProvider({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const didLoad = useRef(false);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // Initial load (+ first-run seed).
   useEffect(() => {
@@ -108,6 +117,45 @@ export function AppProvider({
 
   const clearAll = useCallback(() => setTasks([]), []);
 
+  const addTag = useCallback((name: string, parentId: string | null = null) => {
+    const n = name.trim();
+    if (!n) return;
+    setSettings((prev) => ({ ...prev, tags: [...prev.tags, { id: genId(), name: n, parentId }] }));
+  }, []);
+
+  const renameTag = useCallback((id: string, name: string) => {
+    const n = name.trim();
+    if (!n) return;
+    setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, name: n } : t)) }));
+  }, []);
+
+  const deleteTag = useCallback((id: string) => {
+    // Removed = the tag plus any of its sub-tags.
+    const removed = new Set<string>([id]);
+    settingsRef.current.tags.forEach((t) => {
+      if (t.parentId === id) removed.add(t.id);
+    });
+    setSettings((prev) => ({ ...prev, tags: prev.tags.filter((t) => !removed.has(t.id)) }));
+    setTasks((prev) => prev.map((t) => (t.tagId && removed.has(t.tagId) ? { ...t, tagId: null } : t)));
+  }, []);
+
+  const addPlace = useCallback((name: string) => {
+    const n = name.trim();
+    if (!n) return;
+    setSettings((prev) => ({ ...prev, places: [...prev.places, { id: genId(), name: n }] }));
+  }, []);
+
+  const renamePlace = useCallback((id: string, name: string) => {
+    const n = name.trim();
+    if (!n) return;
+    setSettings((prev) => ({ ...prev, places: prev.places.map((p) => (p.id === id ? { ...p, name: n } : p)) }));
+  }, []);
+
+  const deletePlace = useCallback((id: string) => {
+    setSettings((prev) => ({ ...prev, places: prev.places.filter((p) => p.id !== id) }));
+    setTasks((prev) => prev.map((t) => (t.placeId === id ? { ...t, placeId: null } : t)));
+  }, []);
+
   const value: Ctx = {
     loaded,
     tasks,
@@ -121,6 +169,12 @@ export function AppProvider({
     clearCompleted,
     clearDay,
     clearAll,
+    addTag,
+    renameTag,
+    deleteTag,
+    addPlace,
+    renamePlace,
+    deletePlace,
   };
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

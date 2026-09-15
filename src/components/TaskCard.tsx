@@ -11,13 +11,15 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Task } from '../types';
+import { Place, Tag, Task } from '../types';
 import { C, PX } from '../theme';
-import { fmt, fmtDur, hexA } from '../utils';
+import { fmt, fmtDur, hexA, placeLabel, tagLabel } from '../utils';
 import { Pos } from '../layout';
 
 type Props = {
   task: Task;
+  tags: Tag[];
+  places: Place[];
   pos: Pos;
   isDragging: boolean;
   nowMin: number | null; // null when the viewed day is not today
@@ -33,6 +35,8 @@ type Props = {
 
 function TaskCardBase({
   task,
+  tags,
+  places,
   pos,
   isDragging,
   nowMin,
@@ -51,7 +55,6 @@ function TaskCardBase({
   const lastMinRef = useRef(task.start);
   const draggingRef = useRef(false);
 
-  // Dragged card follows its (snapped) layout top immediately; others glide.
   useEffect(() => {
     if (isDragging) {
       topSV.value = pos.top;
@@ -112,17 +115,22 @@ function TaskCardBase({
   const s = liveStart;
   const end = s + task.dur;
 
-  // Elapsed scrim (only meaningful on "today").
-  let oh = 0;
-  if (nowMin != null) {
-    const grayFrac = end <= nowMin ? 1 : s >= nowMin ? 0 : (nowMin - s) / task.dur;
-    oh = Math.round(grayFrac * pos.h);
-  }
+  // Fully-elapsed tasks (today only) are desaturated and dimmed.
+  const isPast = nowMin != null && end <= nowMin && !isDragging;
 
-  const cardShadow = `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(
-    color,
-    isDragging ? 0.65 : 0.3
-  )}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
+  const tagTxt = tagLabel(tags, task.tagId);
+  const placeTxt = placeLabel(places, task.placeId);
+
+  const cardShadow = isPast
+    ? 'inset 0 0 0 1px rgba(255,255,255,0.05)'
+    : `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(
+        color,
+        isDragging ? 0.65 : 0.3
+      )}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
+
+  const iconColors: [string, string] = isPast
+    ? ['#34343c', '#26262c']
+    : [color, hexA(color, 0.72)];
 
   return (
     <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]}>
@@ -131,32 +139,47 @@ function TaskCardBase({
           styles.card,
           cardAnim,
           { minHeight: pos.h, boxShadow: cardShadow },
+          isPast && styles.pastCard,
         ]}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={styles.grab}>
             <LinearGradient
-              colors={[color, hexA(color, 0.72)]}
+              colors={iconColors}
               start={{ x: 0.1, y: 0 }}
               end={{ x: 0.9, y: 1 }}
-              style={[styles.icon, { boxShadow: `0 5px 16px -3px ${hexA(color, 0.85)}, 0 0 0 1px ${hexA(color, 0.3)}` }]}>
+              style={[
+                styles.icon,
+                !isPast && { boxShadow: `0 5px 16px -3px ${hexA(color, 0.85)}, 0 0 0 1px ${hexA(color, 0.3)}` },
+              ]}>
               <Text style={styles.iconTxt}>{task.emoji}</Text>
             </LinearGradient>
             <View style={styles.body}>
               <Text
                 numberOfLines={1}
-                style={[styles.title, task.done && styles.titleDone]}>
+                style={[styles.title, (task.done || isPast) && styles.titleMuted, task.done && styles.strike]}>
                 {task.title}
               </Text>
               <Text numberOfLines={1} style={styles.time}>
                 {fmt(s)} – {fmt(end)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
               </Text>
-              {!!task.tag && (
-                <View
-                  style={[
-                    styles.tag,
-                    { backgroundColor: hexA(color, 0.15), borderColor: hexA(color, 0.28) },
-                  ]}>
-                  <Text style={[styles.tagTxt, { color }]}>{task.tag}</Text>
+              {(!!tagTxt || !!placeTxt) && (
+                <View style={styles.metaRow}>
+                  {!!tagTxt && (
+                    <View
+                      style={[
+                        styles.chip,
+                        isPast
+                          ? { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }
+                          : { backgroundColor: hexA(color, 0.15), borderColor: hexA(color, 0.28) },
+                      ]}>
+                      <Text style={[styles.chipTxt, { color: isPast ? C.muted : color }]}>{tagTxt}</Text>
+                    </View>
+                  )}
+                  {!!placeTxt && (
+                    <View style={[styles.chip, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' }]}>
+                      <Text style={styles.placeTxt}>📍 {placeTxt}</Text>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -175,20 +198,6 @@ function TaskCardBase({
           ]}>
           {task.done && <Text style={styles.checkMark}>✓</Text>}
         </Pressable>
-
-        {oh >= 2 && (
-          <View
-            style={[
-              styles.scrim,
-              {
-                height: oh,
-                borderRadius: oh >= pos.h - 1 ? 16 : 0,
-                borderTopLeftRadius: 16,
-                borderTopRightRadius: 16,
-              },
-            ]}
-          />
-        )}
       </Animated.View>
     </Animated.View>
   );
@@ -209,6 +218,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: C.card,
   },
+  pastCard: { filter: [{ grayscale: 1 }], opacity: 0.5, backgroundColor: '#131316' },
   grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },
   icon: {
     width: 42,
@@ -220,18 +230,19 @@ const styles = StyleSheet.create({
   iconTxt: { fontSize: 20 },
   body: { flex: 1, minWidth: 0 },
   title: { fontSize: 15.5, fontWeight: '600', letterSpacing: -0.2, color: C.text },
-  titleDone: { color: '#6a6a72', textDecorationLine: 'line-through' },
+  titleMuted: { color: '#7a7a82' },
+  strike: { textDecorationLine: 'line-through', color: '#6a6a72' },
   time: { fontSize: 12.5, color: C.muted, marginTop: 3, fontVariant: ['tabular-nums'] },
   dur: { color: C.faint },
-  tag: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  chip: {
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
   },
-  tagTxt: { fontSize: 11, fontWeight: '600' },
+  chipTxt: { fontSize: 11, fontWeight: '600' },
+  placeTxt: { fontSize: 11, fontWeight: '600', color: C.textDim },
   check: {
     width: 24,
     height: 24,
@@ -240,12 +251,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkMark: { fontSize: 14, color: '#0b0b0d', fontWeight: '700' },
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(11,11,13,0.34)',
-    pointerEvents: 'none',
-  },
 });

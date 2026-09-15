@@ -2,19 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
-import { C, TAGS } from '../theme';
+import { C, COLORS } from '../theme';
 import { useApp } from '../store';
-import { dateFromKey, fmtHours, todayKey, weekdayLetters, weekOf } from '../utils';
+import { fmtHours, todayKey, weekdayLetters, weekOf } from '../utils';
 import { Tab } from '../components/BottomNav';
-
-const TAG_COLORS: Record<string, string> = {
-  Work: '#7C7CF0',
-  Focus: '#5B9DF9',
-  Health: '#5FD08A',
-  Personal: '#4FD1C5',
-  Errand: '#F5A15C',
-  Untagged: '#5b5b63',
-};
 
 type Range = 'today' | 'week';
 
@@ -60,17 +51,27 @@ export function StatsScreen({
   );
   const maxDay = Math.max(60, ...perDay.map((d) => d.sched));
 
-  // Time by tag.
+  // Time by tag — grouped by top-level tag (sub-tags roll up into their parent).
   const tagRows = useMemo(() => {
-    const names = [...TAGS, 'Untagged'];
-    const rows = names.map((name) => {
-      const mins = rangeTasks
-        .filter((t) => (name === 'Untagged' ? !t.tag : t.tag === name))
-        .reduce((s, t) => s + t.dur, 0);
-      return { name, mins, color: TAG_COLORS[name] || C.faint };
+    const tags = settings.tags;
+    const topOf = (id: string) => {
+      const t = tags.find((x) => x.id === id);
+      if (!t) return null;
+      return t.parentId ? tags.find((x) => x.id === t.parentId) || t : t;
+    };
+    const sums = new Map<string, number>();
+    let untagged = 0;
+    rangeTasks.forEach((t) => {
+      const top = t.tagId ? topOf(t.tagId) : null;
+      if (!top) untagged += t.dur;
+      else sums.set(top.id, (sums.get(top.id) || 0) + t.dur);
     });
-    return rows.filter((r) => r.mins > 0).sort((a, b) => b.mins - a.mins);
-  }, [rangeTasks]);
+    const rows = tags
+      .filter((t) => t.parentId == null && (sums.get(t.id) || 0) > 0)
+      .map((t, i) => ({ name: t.name, mins: sums.get(t.id) || 0, color: COLORS[i % COLORS.length] }));
+    if (untagged > 0) rows.push({ name: 'Untagged', mins: untagged, color: C.faint });
+    return rows.sort((a, b) => b.mins - a.mins);
+  }, [rangeTasks, settings.tags]);
   const maxTag = Math.max(1, ...tagRows.map((r) => r.mins));
 
   return (

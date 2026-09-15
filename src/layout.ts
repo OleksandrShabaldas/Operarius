@@ -1,5 +1,5 @@
 import { Task } from './types';
-import { PX, TOPBAND, BOTBAND, GAP, MINH, CHIPGAP } from './theme';
+import { PX, TOPBAND, BOTBAND, GAP, MINH, CHIPGAP, MIN_FREE_H } from './theme';
 import { fmtDur } from './utils';
 
 export type Pos = { top: number; h: number };
@@ -13,18 +13,24 @@ export type DayLayout = {
   chips: Chip[];
   botTop: number;
   H: number;
+  // Maps a minute-of-day to a Y coordinate that matches the laid-out cards, so
+  // the now-line and hour ticks stay aligned with content even though short
+  // tasks and free blocks make the timeline non-proportional.
+  yAt: (min: number) => number;
 };
 
-// Ported 1:1 from the prototype's renderVals layout pass. `startOf` lets a
-// task being dragged use its live (uncommitted) start minute.
+const META_H = 20; // extra height a tag/place row adds to a card
+
 export function computeDayLayout(
   tasks: Task[],
   dayStart: number,
   dayEnd: number,
   dragId: string | null,
-  dragMin: number
+  dragMin: number,
+  gapThreshold: number
 ): DayLayout {
   const startOf = (t: Task) => (dragId === t.id ? dragMin : t.start);
+  const hasMeta = (t: Task) => !!t.tagId || !!t.placeId;
   const sorted = [...tasks].sort((a, b) => startOf(a) - startOf(b));
 
   const pos: Record<string, Pos> = {};
@@ -38,40 +44,30 @@ export function computeDayLayout(
   sorted.forEach((t) => {
     const s = startOf(t);
     const propTop = (s - dayStart) * PX + TOPBAND;
-    const h = Math.max(t.dur * PX, MINH);
+    const minH = MINH + (hasMeta(t) ? META_H : 0);
+    const h = Math.max(t.dur * PX, minH);
 
-    let space = GAP;
-    let chipNeeded = false;
-    let free = 0;
-    if (prevMin != null) {
-      free = s - prevMin;
-      if (free > 0 && free <= 15) {
-        chipNeeded = true;
-        space = CHIPGAP;
-      }
-    }
-
-    const top = Math.max(propTop, prevPx == null ? propTop : prevPx + space);
-
-    if (prevMin != null && free > 15) {
-      const gTop = (prevPx as number) + 4;
-      const gH = top - (prevPx as number) - 8;
-      if (gH >= 40) {
+    let top: number;
+    if (prevPx == null || prevMin == null) {
+      top = propTop;
+    } else {
+      const free = s - prevMin;
+      if (free > gapThreshold) {
+        const natural = Math.max(propTop, prevPx + GAP);
+        top = Math.max(natural, prevPx + MIN_FREE_H + 8);
         freeblocks.push({
           key: `free-${prevMin}`,
           label: `${fmtDur(free)} free`,
           start: prevMin,
-          top: gTop,
-          height: gH,
+          top: prevPx + 4,
+          height: top - prevPx - 8,
         });
+      } else if (free > 0) {
+        top = Math.max(propTop, prevPx + CHIPGAP);
+        chips.push({ key: `chip-${t.id}`, label: `${free} min`, top: prevPx + (top - prevPx) / 2 - 10 });
       } else {
-        chipNeeded = free > 0;
+        top = Math.max(propTop, prevPx + GAP);
       }
-    }
-
-    if (chipNeeded) {
-      const cy = (prevPx as number) + (top - (prevPx as number)) / 2 - 11;
-      chips.push({ key: `chip-${t.id}`, label: `${free} min`, top: cy });
     }
 
     pos[t.id] = { top, h };
@@ -84,5 +80,30 @@ export function computeDayLayout(
   const botTop = Math.max(dayBottomPx, maxBottom + 12);
   const H = botTop + BOTBAND;
 
-  return { sorted, pos, freeblocks, chips, botTop, H };
+  // Build monotonic (minute -> y) anchors from the laid-out cards.
+  const anchors: { min: number; y: number }[] = [{ min: dayStart, y: TOPBAND }];
+  sorted.forEach((t) => {
+    const s = startOf(t);
+    const p = pos[t.id];
+    anchors.push({ min: s, y: p.top });
+    anchors.push({ min: s + t.dur, y: p.top + p.h });
+  });
+  anchors.push({ min: dayEnd, y: botTop });
+  anchors.sort((a, b) => a.min - b.min || a.y - b.y);
+
+  const yAt = (m: number): number => {
+    if (m <= anchors[0].min) return anchors[0].y + (m - anchors[0].min) * PX;
+    for (let i = 1; i < anchors.length; i++) {
+      if (m <= anchors[i].min) {
+        const a = anchors[i - 1];
+        const b = anchors[i];
+        if (b.min === a.min) return b.y;
+        return a.y + ((b.y - a.y) * (m - a.min)) / (b.min - a.min);
+      }
+    }
+    const last = anchors[anchors.length - 1];
+    return last.y + (m - last.min) * PX;
+  };
+
+  return { sorted, pos, freeblocks, chips, botTop, H, yAt };
 }

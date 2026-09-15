@@ -1,5 +1,5 @@
 import { MONTHS, WEEKDAYS_FULL } from './theme';
-import { WeekStart } from './types';
+import { Place, Tag, WeekStart } from './types';
 
 // hex -> rgba string with alpha
 export function hexA(hex: string, a: number): string {
@@ -92,4 +92,26 @@ export function headerParts(key: string): { dayNum: number; weekday: string; mon
 
 export function genId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ---- Tag / place lookups --------------------------------------------------
+
+export function findTag(tags: Tag[], id: string | null): Tag | null {
+  return id ? tags.find((t) => t.id === id) || null : null;
+}
+
+// Display name for a tag id; sub-tags show as "Parent · Child".
+export function tagLabel(tags: Tag[], id: string | null): string {
+  const tag = findTag(tags, id);
+  if (!tag) return '';
+  if (tag.parentId) {
+    const parent = findTag(tags, tag.parentId);
+    return parent ? `${parent.name} · ${tag.name}` : tag.name;
+  }
+  return tag.name;
+}
+
+export function placeLabel(places: Place[], id: string | null): string {
+  const p = id ? places.find((x) => x.id === id) : null;
+  return p ? p.name : '';
 }

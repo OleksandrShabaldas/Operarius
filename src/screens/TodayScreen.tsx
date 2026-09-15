@@ -108,8 +108,11 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenMenu, onNewTask
         showsVerticalScrollIndicator={false}>
         <Timeline
           tasks={dayTasks}
+          tags={settings.tags}
+          places={settings.places}
           dayStart={settings.dayStart}
           dayEnd={settings.dayEnd}
+          gapThreshold={settings.gapThreshold}
           nowMin={isToday ? nowMin : null}
           dragId={drag?.id ?? null}
           dragMin={drag?.min ?? 0}

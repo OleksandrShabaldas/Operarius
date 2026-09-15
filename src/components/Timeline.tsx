@@ -1,16 +1,21 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Task } from '../types';
-import { C, PX, TOPBAND, BOTBAND } from '../theme';
+import { Task, Tag, Place } from '../types';
+import { C, TOPBAND } from '../theme';
 import { fmt } from '../utils';
 import { computeDayLayout } from '../layout';
 import { Hatch } from './Hatch';
 import { TaskCard } from './TaskCard';
 
+const BOTTOM_FILL = 220; // red hatch that extends the end-of-day band toward the screen bottom
+
 type Props = {
   tasks: Task[];
+  tags: Tag[];
+  places: Place[];
   dayStart: number;
   dayEnd: number;
+  gapThreshold: number;
   nowMin: number | null; // null when the viewed day is not today
   dragId: string | null;
   dragMin: number;
@@ -35,62 +40,67 @@ const Spine = React.memo(function Spine({ height }: { height: number }) {
   );
 });
 
-const HourTicks = React.memo(function HourTicks({
+function HourTicks({
   dayStart,
   dayEnd,
+  yAt,
 }: {
   dayStart: number;
   dayEnd: number;
+  yAt: (m: number) => number;
 }) {
   const first = Math.ceil(dayStart / 60);
   const last = Math.floor(dayEnd / 60);
   const rows = [];
   for (let h = first; h <= last; h++) {
-    const top = (h * 60 - dayStart) * PX + TOPBAND;
     rows.push(
-      <View key={h} style={[styles.tickRow, { top }]}>
+      <View key={h} style={[styles.tickRow, { top: yAt(h * 60) }]}>
         <Text style={styles.tickLabel}>{String(h).padStart(2, '0')}</Text>
         <View style={styles.tickLine} />
       </View>
     );
   }
   return <>{rows}</>;
-});
+}
 
 export function Timeline(props: Props) {
-  const { tasks, dayStart, dayEnd, nowMin, dragId, dragMin } = props;
-  const { sorted, pos, freeblocks, chips, botTop, H } = computeDayLayout(
+  const { tasks, tags, places, dayStart, dayEnd, gapThreshold, nowMin, dragId, dragMin } = props;
+  const { sorted, pos, freeblocks, chips, botTop, H, yAt } = computeDayLayout(
     tasks,
     dayStart,
     dayEnd,
     dragId,
-    dragMin
+    dragMin,
+    gapThreshold
   );
 
   const showNow = nowMin != null && nowMin >= dayStart && nowMin <= dayEnd;
   const empty = tasks.length === 0;
+  const contentH = H + BOTTOM_FILL;
 
   return (
-    <View style={{ height: H }}>
-      {/* Beginning-of-day band */}
+    <View style={{ height: contentH }}>
+      {/* Beginning-of-day band — full width, bleeds to the screen edges. */}
       <Hatch
         color="#ff5a64"
-        opacity={0.14}
-        style={[styles.band, { top: 2, height: TOPBAND - 10 }]}>
+        opacity={0.16}
+        radius={0}
+        fadeSides="y"
+        style={[styles.band, { top: 0, height: TOPBAND - 2 }]}>
         <Text style={styles.bandTxt}>BEGINNING OF DAY · {fmt(dayStart)}</Text>
       </Hatch>
 
-      <HourTicks dayStart={dayStart} dayEnd={dayEnd} />
+      <HourTicks dayStart={dayStart} dayEnd={dayEnd} yAt={yAt} />
       <Spine height={botTop - TOPBAND + 2} />
 
       {/* Empty-day prompt */}
       {empty && (
         <Pressable
           onPress={() => props.onAddAt(dayStart)}
-          style={[styles.empty, { top: TOPBAND + 8, height: Math.max(80, botTop - TOPBAND - 16) }]}>
+          style={[styles.free, { top: TOPBAND + 8, height: Math.max(90, botTop - TOPBAND - 16) }]}>
           <Hatch color="#ffffff" opacity={0.05} radius={16} style={StyleSheet.absoluteFill} />
           <Text style={styles.emptyTitle}>Nothing scheduled</Text>
-          <Text style={styles.emptyAdd}>＋ Create a task</Text>
+          <Text style={styles.freeAdd}>＋ Create a task</Text>
         </Pressable>
       )}
 
@@ -106,7 +116,7 @@ export function Timeline(props: Props) {
         </Pressable>
       ))}
 
-      {/* Gap chips */}
+      {/* Gap pills */}
       {chips.map((c) => (
         <View key={c.key} style={[styles.chipRow, { top: c.top }]}>
           <View style={styles.chip}>
@@ -120,6 +130,8 @@ export function Timeline(props: Props) {
         <TaskCard
           key={t.id}
           task={t}
+          tags={tags}
+          places={places}
           pos={pos[t.id]}
           isDragging={dragId === t.id}
           liveStart={dragId === t.id ? dragMin : t.start}
@@ -134,17 +146,19 @@ export function Timeline(props: Props) {
         />
       ))}
 
-      {/* End-of-day band */}
+      {/* End-of-day band — full width, extends toward the bottom of the screen. */}
       <Hatch
         color="#ff5a64"
-        opacity={0.14}
-        style={[styles.band, { top: botTop, height: BOTBAND - 8 }]}>
-        <Text style={styles.bandTxt}>END OF DAY · {fmt(dayEnd)}</Text>
+        opacity={0.16}
+        radius={0}
+        fadeSides="y"
+        style={[styles.endBand, { top: botTop, height: BOTTOM_FILL }]}>
+        <Text style={styles.endTxt}>END OF DAY · {fmt(dayEnd)}</Text>
       </Hatch>
 
       {/* Now line */}
       {showNow && (
-        <View style={[styles.nowLine, { top: (nowMin! - dayStart) * PX + TOPBAND }]}>
+        <View style={[styles.nowLine, { top: yAt(nowMin!) }]}>
           <Text style={styles.nowLabel}>{fmt(nowMin!)}</Text>
           <View style={styles.nowDot} />
         </View>
@@ -156,11 +170,21 @@ export function Timeline(props: Props) {
 const styles = StyleSheet.create({
   band: {
     position: 'absolute',
-    left: 56,
-    right: 16,
-    borderRadius: 13,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bandTxt: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.5, color: C.band },
+  endBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 14,
+  },
+  endTxt: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.5, color: C.band },
   tickRow: { position: 'absolute', left: 0, right: 0, height: 0, pointerEvents: 'none' },
   tickLabel: {
     position: 'absolute',
@@ -188,17 +212,6 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   dash: { width: 2, height: 4, marginBottom: 5, backgroundColor: 'rgba(255,255,255,0.13)' },
-  empty: {
-    position: 'absolute',
-    left: 56,
-    right: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  emptyTitle: { fontSize: 13, fontWeight: '600', color: C.muted },
-  emptyAdd: { fontSize: 12.5, fontWeight: '600', color: C.text },
   free: {
     position: 'absolute',
     left: 56,
@@ -207,7 +220,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
+    zIndex: 1,
   },
+  emptyTitle: { fontSize: 13, fontWeight: '600', color: C.muted },
   freeLabel: { fontSize: 12, fontWeight: '500', color: C.faint },
   freeAdd: { fontSize: 12, fontWeight: '600', color: C.muted },
   chipRow: {
@@ -215,13 +230,13 @@ const styles = StyleSheet.create({
     left: 56,
     right: 16,
     alignItems: 'center',
-    zIndex: 3,
+    zIndex: 4,
     pointerEvents: 'none',
   },
   chip: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 3,
-    borderRadius: 20,
+    borderRadius: 7,
     backgroundColor: 'rgba(30,31,35,0.95)',
     boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.09)',
   },
@@ -233,7 +248,7 @@ const styles = StyleSheet.create({
     height: 0,
     borderTopWidth: 1.5,
     borderTopColor: C.now,
-    zIndex: 40,
+    zIndex: 30,
     pointerEvents: 'none',
   },
   nowLabel: {

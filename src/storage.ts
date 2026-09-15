@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Settings, Task } from './types';
-import { DEFAULT_DAY_START, DEFAULT_DAY_END } from './theme';
+import { Place, Settings, Tag, Task } from './types';
+import { DEFAULT_DAY_START, DEFAULT_DAY_END, DEFAULT_GAP_THRESHOLD } from './theme';
 
 // ---------------------------------------------------------------------------
 // Persistence layer.
@@ -16,11 +16,49 @@ const K_TASKS = 'operarius.tasks.v1';
 const K_SETTINGS = 'operarius.settings.v1';
 const K_SEEDED = 'operarius.seeded.v1';
 
+export const DEFAULT_TAGS: Tag[] = [
+  { id: 'work', name: 'Work', parentId: null },
+  { id: 'focus', name: 'Focus', parentId: null },
+  { id: 'health', name: 'Health', parentId: null },
+  { id: 'personal', name: 'Personal', parentId: null },
+  { id: 'errand', name: 'Errand', parentId: null },
+];
+
+export const DEFAULT_PLACES: Place[] = [
+  { id: 'home', name: 'Home' },
+  { id: 'office', name: 'Office' },
+];
+
 export const DEFAULT_SETTINGS: Settings = {
   dayStart: DEFAULT_DAY_START,
   dayEnd: DEFAULT_DAY_END,
   weekStart: 'mon',
+  gapThreshold: DEFAULT_GAP_THRESHOLD,
+  tags: DEFAULT_TAGS,
+  places: DEFAULT_PLACES,
 };
+
+// Migrate a persisted task from older shapes (e.g. `tag` string) to the current one.
+function migrateTask(raw: any): Task {
+  const tagId =
+    typeof raw.tagId === 'string' || raw.tagId === null
+      ? raw.tagId
+      : typeof raw.tag === 'string' && raw.tag
+        ? raw.tag.toLowerCase()
+        : null;
+  return {
+    id: String(raw.id),
+    title: raw.title ?? 'Untitled',
+    emoji: raw.emoji ?? '📝',
+    color: raw.color ?? '#5B9DF9',
+    start: raw.start ?? 0,
+    dur: raw.dur ?? 30,
+    done: !!raw.done,
+    tagId: tagId ?? null,
+    placeId: typeof raw.placeId === 'string' ? raw.placeId : null,
+    date: raw.date,
+  };
+}
 
 export interface Repository {
   loadTasks(): Promise<Task[]>;
@@ -37,7 +75,7 @@ export const localRepository: Repository = {
       const raw = await AsyncStorage.getItem(K_TASKS);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as Task[]) : [];
+      return Array.isArray(parsed) ? parsed.filter((t) => t && t.date).map(migrateTask) : [];
     } catch {
       return [];
     }
@@ -53,7 +91,14 @@ export const localRepository: Repository = {
     try {
       const raw = await AsyncStorage.getItem(K_SETTINGS);
       if (!raw) return { ...DEFAULT_SETTINGS };
-      return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+      const parsed = JSON.parse(raw) as Partial<Settings>;
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        // Never let a stored blob leave these empty/broken.
+        tags: Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS,
+        places: Array.isArray(parsed.places) ? parsed.places : DEFAULT_PLACES,
+      };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
@@ -85,15 +130,15 @@ export const localRepository: Repository = {
 // install opens looking exactly like the design.
 export function seedTasks(todayKey: string): Task[] {
   const base: Omit<Task, 'id' | 'date'>[] = [
-    { title: 'Morning run', emoji: '🏃', color: '#5FD08A', start: 7 * 60, dur: 30, done: true, tag: 'Health' },
-    { title: 'Shower', emoji: '🚿', color: '#5B9DF9', start: 8 * 60, dur: 15, done: false, tag: '' },
-    { title: 'Breakfast', emoji: '🍳', color: '#F2C14E', start: 8 * 60 + 15, dur: 30, done: false, tag: '' },
-    { title: 'Deep work — draft proposal', emoji: '💻', color: '#7C7CF0', start: 9 * 60 + 30, dur: 90, done: false, tag: 'Focus' },
-    { title: 'Team standup', emoji: '👥', color: '#B57CF0', start: 11 * 60 + 30, dur: 30, done: false, tag: 'Work' },
-    { title: 'Lunch', emoji: '🥗', color: '#4FD1C5', start: 13 * 60, dur: 45, done: false, tag: 'Personal' },
-    { title: 'Design review', emoji: '🎨', color: '#F8677A', start: 15 * 60, dur: 60, done: false, tag: 'Work' },
-    { title: 'Gym', emoji: '🏋️', color: '#F5A15C', start: 17 * 60 + 30, dur: 60, done: false, tag: 'Health' },
-    { title: 'Read', emoji: '📖', color: '#F072B6', start: 21 * 60, dur: 30, done: false, tag: '' },
+    { title: 'Morning run', emoji: '🏃', color: '#5FD08A', start: 7 * 60, dur: 30, done: true, tagId: 'health', placeId: null },
+    { title: 'Shower', emoji: '🚿', color: '#5B9DF9', start: 8 * 60, dur: 15, done: false, tagId: null, placeId: null },
+    { title: 'Breakfast', emoji: '🍳', color: '#F2C14E', start: 8 * 60 + 15, dur: 30, done: false, tagId: null, placeId: null },
+    { title: 'Deep work — draft proposal', emoji: '💻', color: '#7C7CF0', start: 9 * 60 + 30, dur: 90, done: false, tagId: 'focus', placeId: null },
+    { title: 'Team standup', emoji: '👥', color: '#B57CF0', start: 11 * 60 + 30, dur: 30, done: false, tagId: 'work', placeId: null },
+    { title: 'Lunch', emoji: '🥗', color: '#4FD1C5', start: 13 * 60, dur: 45, done: false, tagId: 'personal', placeId: null },
+    { title: 'Design review', emoji: '🎨', color: '#F8677A', start: 15 * 60, dur: 60, done: false, tagId: 'work', placeId: null },
+    { title: 'Gym', emoji: '🏋️', color: '#F5A15C', start: 17 * 60 + 30, dur: 60, done: false, tagId: 'health', placeId: null },
+    { title: 'Read', emoji: '📖', color: '#F072B6', start: 21 * 60, dur: 30, done: false, tagId: null, placeId: null },
   ];
   return base.map((t, i) => ({ ...t, id: `seed-${i + 1}`, date: todayKey }));
 }

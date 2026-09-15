@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { C } from '../theme';
@@ -9,6 +9,9 @@ import { fmt, fmtDur } from '../utils';
 import { TextPromptModal } from '../components/TextPromptModal';
 import { PlaceIcon } from '../components/PlaceIcon';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
+import { Tappable } from '../components/anim';
+
+const Pressable = Tappable; // every tappable control gets press feedback
 
 type Category = 'general' | 'appearance' | 'tags' | 'places' | 'presets' | 'data' | 'about';
 type Prompt = { title: string; initial: string; submitLabel: string; onSubmit: (t: string) => void };

@@ -129,10 +129,11 @@ export function Timeline(props: Props) {
       ))}
 
       {/* Task cards */}
-      {sorted.map((t) => (
+      {sorted.map((t, i) => (
         <TaskCard
           key={t.id}
           task={t}
+          index={i}
           tags={tags}
           places={places}
           clock={clock}

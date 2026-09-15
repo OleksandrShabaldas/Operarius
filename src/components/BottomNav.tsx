@@ -1,21 +1,15 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
+import { Tappable } from './anim';
 
 export type Tab = 'today' | 'todo';
 
-export function BottomNav({
-  tab,
-  onTab,
-  onAdd,
-}: {
-  tab: Tab;
-  onTab: (t: Tab) => void;
-  onAdd: () => void;
-}) {
+export function BottomNav({ tab, onTab, onAdd }: { tab: Tab; onTab: (t: Tab) => void; onAdd: () => void }) {
   const insets = useSafeAreaInsets();
   const barBottom = Math.max(insets.bottom, 10) + 6;
   const fabBottom = barBottom + 22;
@@ -23,32 +17,16 @@ export function BottomNav({
   return (
     <View style={styles.root}>
       <View style={[styles.bar, { bottom: barBottom }]}>
-        <NavItem
-          icon="today-outline"
-          iconOn="today"
-          label="Today"
-          active={tab === 'today'}
-          onPress={() => onTab('today')}
-        />
+        <NavItem icon="today-outline" iconOn="today" label="Today" active={tab === 'today'} onPress={() => onTab('today')} />
         <View style={{ width: 60 }} />
-        <NavItem
-          icon="checkbox-outline"
-          iconOn="checkbox"
-          label="To-do"
-          active={tab === 'todo'}
-          onPress={() => onTab('todo')}
-        />
+        <NavItem icon="checkbox-outline" iconOn="checkbox" label="To-do" active={tab === 'todo'} onPress={() => onTab('todo')} />
       </View>
 
-      <Pressable style={[styles.fab, { bottom: fabBottom }]} onPress={onAdd} hitSlop={8}>
-        <LinearGradient
-          colors={['#33343a', '#17181c']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.fabGrad}>
+      <Tappable style={[styles.fab, { bottom: fabBottom }]} onPress={onAdd} hitSlop={8} scaleTo={0.9}>
+        <LinearGradient colors={['#33343a', '#17181c']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fabGrad}>
           <Ionicons name="add" size={30} color="#fff" />
         </LinearGradient>
-      </Pressable>
+      </Tappable>
     </View>
   );
 }
@@ -66,11 +44,18 @@ function NavItem({
   active: boolean;
   onPress: () => void;
 }) {
+  const s = useSharedValue(1);
+  useEffect(() => {
+    s.value = withSpring(active ? 1.14 : 1, { mass: 0.5, damping: 10, stiffness: 220 });
+  }, [active, s]);
+  const aStyle = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
   return (
-    <Pressable style={styles.item} onPress={onPress} hitSlop={10}>
-      <Ionicons name={active ? iconOn : icon} size={20} color={active ? C.text : C.faint} />
+    <Tappable style={styles.item} onPress={onPress} hitSlop={10}>
+      <Animated.View style={aStyle}>
+        <Ionicons name={active ? iconOn : icon} size={20} color={active ? C.text : C.faint} />
+      </Animated.View>
       <Text style={[styles.itemTxt, { color: active ? C.text : C.faint }]}>{label}</Text>
-    </Pressable>
+    </Tappable>
   );
 }
 
@@ -98,14 +83,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    boxShadow:
-      '0 0 0 1px rgba(255,255,255,0.1), 0 0 26px -2px rgba(124,124,240,0.75), 0 0 46px -6px rgba(79,209,197,0.5), 0 14px 30px -8px rgba(0,0,0,0.85)',
+    boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 0 26px -2px rgba(124,124,240,0.75), 0 0 46px -6px rgba(79,209,197,0.5), 0 14px 30px -8px rgba(0,0,0,0.85)',
   },
-  fabGrad: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  fabGrad: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -16,9 +16,11 @@ import { C, PX } from '../theme';
 import { fmt, fmtDur, hexA, placeLabel, tagLabel } from '../utils';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
+import { stagger, Tappable } from './anim';
 
 type Props = {
   task: Task;
+  index: number;
   tags: Tag[];
   places: Place[];
   clock: Clock;
@@ -139,7 +141,7 @@ function TaskCardBase(props: Props) {
   const cardShadow = `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(color, isDragging ? 0.65 : 0.3)}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
 
   return (
-    <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]}>
+    <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]} entering={stagger(props.index)}>
       <Animated.View style={[styles.card, cardAnim, { minHeight: pos.h, boxShadow: cardShadow }]}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={styles.grab}>
@@ -147,12 +149,13 @@ function TaskCardBase(props: Props) {
           </Animated.View>
         </GestureDetector>
 
-        <Pressable
+        <Tappable
           onPress={() => props.onToggle(task.id)}
           hitSlop={8}
+          scaleTo={0.82}
           style={[styles.check, { backgroundColor: task.done ? color : 'transparent', boxShadow: `inset 0 0 0 2px ${task.done ? color : hexA(color, 0.5)}` }]}>
           {task.done && <Text style={styles.checkMark}>✓</Text>}
-        </Pressable>
+        </Tappable>
 
         {/* Elapsed portion: desaturate + dim via blend overlays (no content copy). */}
         {oh >= 2 && (

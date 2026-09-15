@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
+import React, { useRef, useState } from 'react';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { cleanNotes, downloadAndInstall, openApkInBrowser, ReleaseInfo } from '../updater';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { CenterPopup } from './Overlay';
+import { Tappable } from './anim';
 
 export function UpdateModal({
   release,
@@ -20,19 +19,22 @@ export function UpdateModal({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const visible = !!release;
+  const rRef = useRef<ReleaseInfo | null>(release);
+  if (release) rRef.current = release;
+  const r = release ?? rRef.current;
 
   const onUpdate = async () => {
-    if (!release) return;
+    if (!r) return;
     setError(null);
-    if (!release.apkUrl) {
-      Linking.openURL(release.htmlUrl).catch(() => {});
+    if (!r.apkUrl) {
+      Linking.openURL(r.htmlUrl).catch(() => {});
       onClose();
       return;
     }
     setBusy(true);
     setProgress(0);
     try {
-      await downloadAndInstall(release, setProgress);
+      await downloadAndInstall(r, setProgress);
       onClose();
     } catch {
       setBusy(false);
@@ -40,86 +42,68 @@ export function UpdateModal({
     }
   };
 
-  const notes = release ? cleanNotes(release.notes) : '';
+  const notes = r ? cleanNotes(r.notes) : '';
   const pct = Math.round(progress * 100);
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={busy ? undefined : onClose} statusBarTranslucent>
-      {release && (
-        <View style={styles.root}>
-          <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(160)} onPress={busy ? undefined : onClose} />
-          <Animated.View entering={ZoomIn.duration(220)} style={styles.card}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeTxt}>UPDATE AVAILABLE</Text>
-            </View>
-            <Text style={styles.title}>{release.name}</Text>
-            <Text style={styles.versions}>
-              v{currentVersion} → <Text style={styles.newV}>v{release.version}</Text>
-            </Text>
+    <CenterPopup open={visible} onClose={busy ? () => {} : onClose}>
+      {r && (
+        <>
+          <View style={styles.badge}>
+            <Text style={styles.badgeTxt}>UPDATE AVAILABLE</Text>
+          </View>
+          <Text style={styles.title}>{r.name}</Text>
+          <Text style={styles.versions}>
+            v{currentVersion} → <Text style={styles.newV}>v{r.version}</Text>
+          </Text>
 
-            {!!notes ? (
-              <ScrollView style={styles.notes} contentContainerStyle={{ paddingVertical: 8 }}>
-                <Text style={styles.notesTxt}>{notes}</Text>
-              </ScrollView>
-            ) : (
-              <Text style={styles.noNotes}>No release notes.</Text>
-            )}
+          {notes ? (
+            <ScrollView style={styles.notes} contentContainerStyle={{ paddingVertical: 8 }}>
+              <Text style={styles.notesTxt}>{notes}</Text>
+            </ScrollView>
+          ) : (
+            <Text style={styles.noNotes}>No release notes.</Text>
+          )}
 
-            {busy && (
-              <View style={styles.progressWrap}>
-                <View style={styles.progressTrack}>
-                  <LinearGradient
-                    colors={[C.accentA, C.accentB]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[styles.progressFill, { width: `${Math.max(4, pct)}%` }]}
-                  />
-                </View>
-                <Text style={styles.progressTxt}>{pct > 0 ? `Downloading… ${pct}%` : 'Starting download…'}</Text>
+          {busy && (
+            <View style={styles.progressWrap}>
+              <View style={styles.progressTrack}>
+                <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.progressFill, { width: `${Math.max(4, pct)}%` }]} />
               </View>
-            )}
-
-            {!!error && <Text style={styles.error}>{error}</Text>}
-
-            <View style={styles.actions}>
-              <Pressable onPress={onClose} disabled={busy} style={[styles.later, busy && styles.dim]}>
-                <Text style={styles.laterTxt}>Later</Text>
-              </Pressable>
-              <Pressable onPress={onUpdate} disabled={busy} style={[styles.updateWrap, busy && styles.dim]}>
-                <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.update}>
-                  <Text style={styles.updateTxt}>{busy ? 'Working…' : release.apkUrl ? 'Update now' : 'View release'}</Text>
-                </LinearGradient>
-              </Pressable>
+              <Text style={styles.progressTxt}>{pct > 0 ? `Downloading… ${pct}%` : 'Starting download…'}</Text>
             </View>
+          )}
 
-            {!!release.apkUrl && (
-              <Pressable
-                onPress={() => {
-                  openApkInBrowser(release);
-                  onClose();
-                }}
-                style={styles.browserBtn}>
-                <Text style={[styles.browserTxt, error ? styles.browserTxtHi : null]}>Download in browser instead</Text>
-              </Pressable>
-            )}
-          </Animated.View>
-        </View>
+          {!!error && <Text style={styles.error}>{error}</Text>}
+
+          <View style={styles.actions}>
+            <Tappable onPress={onClose} disabled={busy} style={[styles.later, busy && styles.dim]}>
+              <Text style={styles.laterTxt}>Later</Text>
+            </Tappable>
+            <Tappable onPress={onUpdate} disabled={busy} style={[styles.updateWrap, busy && styles.dim]}>
+              <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.update}>
+                <Text style={styles.updateTxt}>{busy ? 'Working…' : r.apkUrl ? 'Update now' : 'View release'}</Text>
+              </LinearGradient>
+            </Tappable>
+          </View>
+
+          {!!r.apkUrl && (
+            <Tappable
+              onPress={() => {
+                openApkInBrowser(r);
+                onClose();
+              }}
+              style={styles.browserBtn}>
+              <Text style={[styles.browserTxt, error ? styles.browserTxtHi : null]}>Download in browser instead</Text>
+            </Tappable>
+          )}
+        </>
       )}
-    </Modal>
+    </CenterPopup>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
-  card: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: C.sheet,
-    borderRadius: 24,
-    padding: 22,
-    boxShadow: '0 24px 70px -20px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.07)',
-  },
   badge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(124,124,240,0.16)', boxShadow: 'inset 0 0 0 1px rgba(124,124,240,0.4)', marginBottom: 12 },
   badgeTxt: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.6, color: C.accentA },
   title: { fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 4 },

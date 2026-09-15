@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { useApp } from '../store';
 import { addDays, headerParts, hexA, todayKey } from '../utils';
 import { WeekStrip } from '../components/WeekStrip';
 import { Timeline } from '../components/Timeline';
+import { Tappable } from '../components/anim';
 
 type Props = {
   selectedKey: string;
@@ -87,12 +88,12 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
             <Text style={styles.month}>{month}</Text>
           </View>
           <View style={styles.headBtns}>
-            <Pressable style={styles.headBtn} onPress={onOpenStats} hitSlop={6}>
+            <Tappable style={styles.headBtn} onPress={onOpenStats} hitSlop={6}>
               <Feather name="bar-chart-2" size={17} color={C.textDim} />
-            </Pressable>
-            <Pressable style={styles.headBtn} onPress={onOpenSettings} hitSlop={6}>
+            </Tappable>
+            <Tappable style={styles.headBtn} onPress={onOpenSettings} hitSlop={6}>
               <Feather name="menu" size={17} color={C.textDim} />
-            </Pressable>
+            </Tappable>
           </View>
         </View>
 
@@ -109,17 +110,17 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
       {allday.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.alldayScroll} contentContainerStyle={styles.alldayRow}>
           {allday.map((t) => (
-            <Pressable key={t.id} style={styles.alldayCard} onPress={() => onOpenInfo(t.id)}>
+            <Tappable key={t.id} style={styles.alldayCard} onPress={() => onOpenInfo(t.id)}>
               <LinearGradient colors={[t.color, hexA(t.color, 0.72)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.alldayIcon}>
                 <Text style={styles.alldayEmoji}>{t.emoji}</Text>
               </LinearGradient>
               <Text style={[styles.alldayTitle, t.done && styles.strike]} numberOfLines={1}>{t.title}</Text>
-            </Pressable>
+            </Tappable>
           ))}
-          <Pressable style={styles.alldayAdd} onPress={() => onNewTask({ type: 'allday' })}>
+          <Tappable style={styles.alldayAdd} onPress={() => onNewTask({ type: 'allday' })}>
             <Feather name="plus" size={16} color={C.muted} />
             <Text style={styles.alldayAddTxt}>All-day</Text>
-          </Pressable>
+          </Tappable>
         </ScrollView>
       )}
 

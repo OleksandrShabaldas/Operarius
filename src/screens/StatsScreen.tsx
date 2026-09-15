@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { C, COLORS } from '../theme';
 import { useApp } from '../store';
 import { fmtHours, todayKey, weekdayLetters, weekOf } from '../utils';
+import { Tappable } from '../components/anim';
+
+const Pressable = Tappable; // press feedback on the back button, segments and bars
 
 type Range = 'today' | 'week';
 

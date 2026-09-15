@@ -1,14 +1,13 @@
-import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
+import React, { useRef } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Clock, Place, Tag, Task } from '../types';
 import { fmt, fmtDur, hexA, dateLabel, placeLabel, tagLabel } from '../utils';
 import { PlaceIcon } from './PlaceIcon';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { BottomSheet } from './Overlay';
+import { Tappable } from './anim';
 
 export function TaskInfoSheet({
   task,
@@ -30,100 +29,84 @@ export function TaskInfoSheet({
   onClose: () => void;
 }) {
   const visible = !!task;
-  if (!task) return <Modal visible={false} transparent />;
+  const tRef = useRef<Task | null>(task);
+  if (task) tRef.current = task;
+  const t = task ?? tRef.current;
 
-  const t = task;
-  const tagTxt = tagLabel(tags, t.tagId);
-  const placeTxt = placeLabel(places, t.placeId);
-  const typeLabel = t.type === 'allday' ? 'All-day' : t.type === 'todo' ? 'To-do' : 'Planned';
-  const doneCount = t.subtasks.filter((s) => s.done).length;
+  const tagTxt = t ? tagLabel(tags, t.tagId) : '';
+  const placeTxt = t ? placeLabel(places, t.placeId) : '';
+  const typeLabel = t?.type === 'allday' ? 'All-day' : t?.type === 'todo' ? 'To-do' : 'Planned';
+  const doneCount = t ? t.subtasks.filter((s) => s.done).length : 0;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.root}>
-        <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(180)} onPress={onClose} />
-        <Animated.View entering={SlideInDown.duration(280)} style={styles.sheet}>
-          <View style={styles.handle} />
-          <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-            <View style={styles.header}>
-              <LinearGradient
-                colors={[t.color, hexA(t.color, 0.75)]}
-                start={{ x: 0.1, y: 0 }}
-                end={{ x: 0.9, y: 1 }}
-                style={[styles.icon, { boxShadow: `0 6px 16px -4px ${hexA(t.color, 0.7)}` }]}>
-                <Text style={styles.iconTxt}>{t.emoji}</Text>
-              </LinearGradient>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.title, t.done && styles.strike]}>{t.title}</Text>
-                <View style={styles.typeBadge}>
-                  <Text style={styles.typeTxt}>{typeLabel}</Text>
-                </View>
+    <BottomSheet open={visible} onClose={onClose}>
+      {t && (
+        <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+          <View style={styles.header}>
+            <LinearGradient colors={[t.color, hexA(t.color, 0.75)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={[styles.icon, { boxShadow: `0 6px 16px -4px ${hexA(t.color, 0.7)}` }]}>
+              <Text style={styles.iconTxt}>{t.emoji}</Text>
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.title, t.done && styles.strike]}>{t.title}</Text>
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeTxt}>{typeLabel}</Text>
               </View>
             </View>
+          </View>
 
-            {t.type === 'planned' && (
-              <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />
-            )}
-            {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} />}
-            {!!tagTxt && (
-              <View style={styles.metaRow}>
+          {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
+          {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} />}
+
+          {(!!tagTxt || !!placeTxt) && (
+            <View style={styles.metaRow}>
+              {!!tagTxt && (
                 <View style={[styles.chip, { backgroundColor: hexA(t.color, 0.15), borderColor: hexA(t.color, 0.28) }]}>
                   <Text style={[styles.chipTxt, { color: t.color }]}>{tagTxt}</Text>
                 </View>
-                {!!placeTxt && (
-                  <View style={[styles.chip, styles.placeChip]}>
-                    <PlaceIcon size={11} color={C.textDim} />
-                    <Text style={styles.placeTxt}>{placeTxt}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-            {!tagTxt && !!placeTxt && (
-              <View style={styles.metaRow}>
+              )}
+              {!!placeTxt && (
                 <View style={[styles.chip, styles.placeChip]}>
                   <PlaceIcon size={11} color={C.textDim} />
                   <Text style={styles.placeTxt}>{placeTxt}</Text>
                 </View>
-              </View>
-            )}
-
-            {t.subtasks.length > 0 && (
-              <>
-                <Text style={styles.section}>SUBTASKS · {doneCount}/{t.subtasks.length}</Text>
-                {t.subtasks.map((s) => (
-                  <Pressable key={s.id} style={styles.subRow} onPress={() => onToggleSubtask(s.id)}>
-                    <View style={[styles.subCheck, s.done && { backgroundColor: t.color }]}>
-                      {s.done && <Feather name="check" size={13} color="#0b0b0d" />}
-                    </View>
-                    <Text style={[styles.subTxt, s.done && styles.subDone]}>{s.title || 'Untitled'}</Text>
-                  </Pressable>
-                ))}
-              </>
-            )}
-
-            {!!t.notes.trim() && (
-              <>
-                <Text style={styles.section}>NOTES</Text>
-                <Text style={styles.notes}>{t.notes}</Text>
-              </>
-            )}
-
-            <View style={styles.actions}>
-              <Pressable onPress={onToggleDone} style={styles.completeBtn}>
-                <Feather name={t.done ? 'rotate-ccw' : 'check'} size={16} color={C.text} />
-                <Text style={styles.completeTxt}>{t.done ? 'Mark undone' : 'Complete'}</Text>
-              </Pressable>
-              <Pressable onPress={onEdit} style={styles.editWrap}>
-                <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edit}>
-                  <Feather name="edit-2" size={15} color="#0b0b0d" />
-                  <Text style={styles.editTxt}>Edit</Text>
-                </LinearGradient>
-              </Pressable>
+              )}
             </View>
-          </ScrollView>
-        </Animated.View>
-      </View>
-    </Modal>
+          )}
+
+          {t.subtasks.length > 0 && (
+            <>
+              <Text style={styles.section}>SUBTASKS · {doneCount}/{t.subtasks.length}</Text>
+              {t.subtasks.map((s) => (
+                <Tappable key={s.id} style={styles.subRow} onPress={() => onToggleSubtask(s.id)}>
+                  <View style={[styles.subCheck, s.done && { backgroundColor: t.color }]}>{s.done && <Feather name="check" size={13} color="#0b0b0d" />}</View>
+                  <Text style={[styles.subTxt, s.done && styles.subDone]}>{s.title || 'Untitled'}</Text>
+                </Tappable>
+              ))}
+            </>
+          )}
+
+          {!!t.notes.trim() && (
+            <>
+              <Text style={styles.section}>NOTES</Text>
+              <Text style={styles.notes}>{t.notes}</Text>
+            </>
+          )}
+
+          <View style={styles.actions}>
+            <Tappable onPress={onToggleDone} style={styles.completeBtn}>
+              <Feather name={t.done ? 'rotate-ccw' : 'check'} size={16} color={C.text} />
+              <Text style={styles.completeTxt}>{t.done ? 'Mark undone' : 'Complete'}</Text>
+            </Tappable>
+            <Tappable onPress={onEdit} style={styles.editWrap}>
+              <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edit}>
+                <Feather name="edit-2" size={15} color="#0b0b0d" />
+                <Text style={styles.editTxt}>Edit</Text>
+              </LinearGradient>
+            </Tappable>
+          </View>
+        </ScrollView>
+      )}
+    </BottomSheet>
   );
 }
 
@@ -137,19 +120,6 @@ function InfoRow({ icon, text }: { icon: keyof typeof Feather.glyphMap; text: st
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
-    backgroundColor: C.sheet,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 22,
-    paddingTop: 12,
-    paddingBottom: 30,
-    maxHeight: '80%',
-    boxShadow: '0 -20px 60px -20px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.06)',
-  },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.16)', alignSelf: 'center', marginBottom: 16 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
   icon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 26 },

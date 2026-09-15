@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +8,7 @@ import { C } from '../theme';
 import { Task } from '../types';
 import { useApp } from '../store';
 import { hexA, tagLabel } from '../utils';
+import { stagger, Tappable } from '../components/anim';
 
 export function TodoScreen({
   onOpenInfo,
@@ -29,12 +31,12 @@ export function TodoScreen({
       <View style={[styles.head, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.title}>To-do</Text>
         <View style={styles.headBtns}>
-          <Pressable style={styles.headBtn} onPress={onOpenStats} hitSlop={6}>
+          <Tappable style={styles.headBtn} onPress={onOpenStats} hitSlop={6}>
             <Feather name="bar-chart-2" size={18} color={C.textDim} />
-          </Pressable>
-          <Pressable style={styles.headBtn} onPress={onOpenSettings} hitSlop={6}>
+          </Tappable>
+          <Tappable style={styles.headBtn} onPress={onOpenSettings} hitSlop={6}>
             <Feather name="menu" size={18} color={C.textDim} />
-          </Pressable>
+          </Tappable>
         </View>
       </View>
 
@@ -46,12 +48,16 @@ export function TodoScreen({
             <Text style={styles.emptySub}>Tap ＋ and pick “To-do” to add one.</Text>
           </View>
         )}
-        {open.map((t) => (
-          <TodoRow key={t.id} task={t} tagName={tagLabel(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+        {open.map((t, i) => (
+          <Animated.View key={t.id} entering={stagger(i)}>
+            <TodoRow task={t} tagName={tagLabel(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+          </Animated.View>
         ))}
         {done.length > 0 && <Text style={styles.section}>COMPLETED · {done.length}</Text>}
-        {done.map((t) => (
-          <TodoRow key={t.id} task={t} tagName={tagLabel(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+        {done.map((t, i) => (
+          <Animated.View key={t.id} entering={stagger(open.length + i)}>
+            <TodoRow task={t} tagName={tagLabel(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+          </Animated.View>
         ))}
       </ScrollView>
     </View>
@@ -62,10 +68,10 @@ function TodoRow({ task, tagName, onToggle, onOpen }: { task: Task; tagName: str
   const subCount = task.subtasks.length;
   const subDone = task.subtasks.filter((s) => s.done).length;
   return (
-    <Pressable style={styles.row} onPress={onOpen}>
-      <Pressable onPress={onToggle} hitSlop={8} style={[styles.check, { boxShadow: `inset 0 0 0 2px ${task.done ? task.color : hexA(task.color, 0.5)}`, backgroundColor: task.done ? task.color : 'transparent' }]}>
+    <Tappable style={styles.row} onPress={onOpen}>
+      <Tappable onPress={onToggle} hitSlop={8} scaleTo={0.82} style={[styles.check, { boxShadow: `inset 0 0 0 2px ${task.done ? task.color : hexA(task.color, 0.5)}`, backgroundColor: task.done ? task.color : 'transparent' }]}>
         {task.done && <Feather name="check" size={14} color="#0b0b0d" />}
-      </Pressable>
+      </Tappable>
       <LinearGradient colors={[task.color, hexA(task.color, 0.72)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.icon}>
         <Text style={styles.iconTxt}>{task.emoji}</Text>
       </LinearGradient>
@@ -80,7 +86,7 @@ function TodoRow({ task, tagName, onToggle, onOpen }: { task: Task; tagName: str
           {subCount > 0 && <Text style={styles.subCount}>☑ {subDone}/{subCount}</Text>}
         </View>
       </View>
-    </Pressable>
+    </Tappable>
   );
 }
 

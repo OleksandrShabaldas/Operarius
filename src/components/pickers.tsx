@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
-import { C, DOW, MONTHS } from '../theme';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { C, MONTHS } from '../theme';
 import { Clock } from '../types';
 import { dateFromKey, dateKey, fmt, fmtDur, weekdayLetters } from '../utils';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { CenterPopup as Popup } from './Overlay';
+import { Tappable } from './anim';
 
 // ---- Reusable centered popup ---------------------------------------------
 export function CenterPopup({
@@ -20,18 +19,13 @@ export function CenterPopup({
   children: React.ReactNode;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.root}>
-        <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(140)} onPress={onClose} />
-        <Animated.View entering={ZoomIn.duration(200)} style={styles.card}>
-          <Text style={styles.title}>{title}</Text>
-          {children}
-          <Pressable onPress={onClose} style={styles.done}>
-            <Text style={styles.doneTxt}>Done</Text>
-          </Pressable>
-        </Animated.View>
-      </View>
-    </Modal>
+    <Popup open={visible} onClose={onClose}>
+      <Text style={styles.title}>{title}</Text>
+      {children}
+      <Tappable onPress={onClose} style={styles.done}>
+        <Text style={styles.doneTxt}>Done</Text>
+      </Tappable>
+    </Popup>
   );
 }
 

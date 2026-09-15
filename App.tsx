@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
+import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -133,51 +134,43 @@ function Root() {
 
   const viewTask = viewId ? tasks.find((t) => t.id === viewId) ?? null : null;
 
-  let content: React.ReactNode;
-  if (overlay === 'stats') {
-    content = (
-      <StatsScreen
-        onClose={() => setOverlay(null)}
-        onPickDay={(key) => {
-          setSelectedKey(key);
-          setTab('today');
-          setOverlay(null);
-        }}
-      />
-    );
-  } else if (overlay === 'settings') {
-    content = (
-      <SettingsScreen
-        onClose={() => setOverlay(null)}
-        onCheckUpdates={() => runUpdateCheck(true)}
-        checkingUpdates={checking}
-        currentVersion={curVer}
-      />
-    );
-  } else {
-    content = (
-      <>
-        {tab === 'today' ? (
-          <TodayScreen
-            selectedKey={selectedKey}
-            setSelectedKey={setSelectedKey}
-            onOpenStats={() => setOverlay('stats')}
-            onOpenSettings={() => setOverlay('settings')}
-            onNewTask={openNew}
-            onOpenInfo={setViewId}
-          />
-        ) : (
-          <TodoScreen onOpenInfo={setViewId} onOpenStats={() => setOverlay('stats')} onOpenSettings={() => setOverlay('settings')} />
-        )}
-        <BottomNav tab={tab} onTab={setTab} onAdd={() => openNew()} />
-      </>
-    );
-  }
-
   return (
     <View style={styles.bg}>
       <BackgroundGlow />
-      {content}
+
+      {/* Base tabs — each screen's list staggers in on mount */}
+      {tab === 'today' ? (
+        <TodayScreen
+          selectedKey={selectedKey}
+          setSelectedKey={setSelectedKey}
+          onOpenStats={() => setOverlay('stats')}
+          onOpenSettings={() => setOverlay('settings')}
+          onNewTask={openNew}
+          onOpenInfo={setViewId}
+        />
+      ) : (
+        <TodoScreen onOpenInfo={setViewId} onOpenStats={() => setOverlay('stats')} onOpenSettings={() => setOverlay('settings')} />
+      )}
+      <BottomNav tab={tab} onTab={setTab} onAdd={() => openNew()} />
+
+      {/* Pushed screens — slide in/out over the tabs */}
+      {overlay === 'stats' && (
+        <Animated.View entering={SlideInRight.duration(300)} exiting={SlideOutRight.duration(260)} style={styles.overlay}>
+          <StatsScreen
+            onClose={() => setOverlay(null)}
+            onPickDay={(key) => {
+              setSelectedKey(key);
+              setTab('today');
+              setOverlay(null);
+            }}
+          />
+        </Animated.View>
+      )}
+      {overlay === 'settings' && (
+        <Animated.View entering={SlideInRight.duration(300)} exiting={SlideOutRight.duration(260)} style={styles.overlay}>
+          <SettingsScreen onClose={() => setOverlay(null)} onCheckUpdates={() => runUpdateCheck(true)} checkingUpdates={checking} currentVersion={curVer} />
+        </Animated.View>
+      )}
 
       <TaskInfoSheet
         task={viewTask}
@@ -225,5 +218,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: C.bg },
+  fill: { flex: 1 },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: C.bg },
   glow: { position: 'absolute', top: 0, left: 0, right: 0, height: 340, pointerEvents: 'none' },
 });

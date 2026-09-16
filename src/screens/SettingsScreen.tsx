@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { C, COLORS } from '../theme';
 import { Tag } from '../types';
@@ -8,6 +9,7 @@ import { useApp } from '../store';
 import { fmt, fmtDur } from '../utils';
 import { TextPromptModal } from '../components/TextPromptModal';
 import { PlaceIcon } from '../components/PlaceIcon';
+import { PlaceEditorPopup } from '../components/PlaceEditorPopup';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
 import { CenterPopup } from '../components/Overlay';
 import { Tappable } from '../components/anim';
@@ -40,12 +42,19 @@ export function SettingsScreen({
 }) {
   const insets = useSafeAreaInsets();
   const app = useApp();
-  const { settings, updateSettings, clearCompleted, clearAll, addTag, renameTag, setTagColor, deleteTag, addPlace, renamePlace, deletePlace } = app;
+  const {
+    settings, updateSettings, clearCompleted, clearAll,
+    addTag, renameTag, setTagColor, deleteTag,
+    addPlace, renamePlace, setPlaceTag, setPlaceLink, setPlacePhoto, deletePlace,
+  } = app;
   const [cat, setCat] = useState<Category | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [colorPick, setColorPick] = useState<string | null>(null);
   const [addPreset, setAddPreset] = useState<'time' | 'dur' | null>(null);
   const [tempPreset, setTempPreset] = useState(12 * 60);
+  const [placeTab, setPlaceTab] = useState<string | null>(null); // null = Untagged
+  const [presetTab, setPresetTab] = useState<string | null>(null); // null = Global
+  const [placeEdit, setPlaceEdit] = useState<string | null>(null);
 
   // Back inside a category returns to the category list (App closes the screen).
   useEffect(() => {
@@ -174,55 +183,99 @@ export function SettingsScreen({
 
         {cat === 'places' && (
           <View style={{ marginTop: 10 }}>
-            {settings.places.map((pl) => (
-              <View key={pl.id} style={styles.manageBlock}>
-                <View style={styles.manageRow}>
-                  <Pressable style={[styles.manageName, styles.placeName]} onPress={() => setPrompt({ title: 'Rename place', initial: pl.name, submitLabel: 'Save', onSubmit: (t) => renamePlace(pl.id, t) })}>
-                    <PlaceIcon size={14} color={C.textDim} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
+              {[null, ...topTags.map((t) => t.id)].map((tid) => {
+                const t = tid ? topTags.find((x) => x.id === tid) : null;
+                const on = placeTab === tid;
+                return (
+                  <Pressable key={tid ?? 'untagged'} onPress={() => setPlaceTab(tid)} style={[styles.tab, on && (t ? { backgroundColor: t.color } : styles.tabOn)]}>
+                    <Text style={[styles.tabTxt, { color: on ? '#0b0b0d' : C.textDim }]}>{t ? t.name : 'Untagged'}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Animated.View key={`pl-${placeTab ?? 'x'}`} entering={FadeInDown.duration(240).springify().damping(18)}>
+              {settings.places.filter((pl) => (pl.tagId ?? null) === placeTab).map((pl) => (
+                <Pressable key={pl.id} style={styles.placeRow} onPress={() => setPlaceEdit(pl.id)}>
+                  {pl.photoUri ? (
+                    <Image source={{ uri: pl.photoUri }} style={styles.placeThumb} />
+                  ) : (
+                    <View style={styles.placeThumbEmpty}>
+                      <PlaceIcon size={16} color={C.textDim} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.manageNameTxt}>{pl.name}</Text>
-                  </Pressable>
-                  <Pressable hitSlop={6} style={styles.iconBtn} onPress={() => confirm('Delete', `Delete place "${pl.name}"?`, () => deletePlace(pl.id))}>
-                    <Feather name="trash-2" size={15} color={C.danger} />
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-            <Pressable style={styles.addBtn} onPress={() => setPrompt({ title: 'New place', initial: '', submitLabel: 'Add', onSubmit: (t) => addPlace(t) })}>
-              <Text style={styles.addBtnTxt}>＋ New place</Text>
-            </Pressable>
+                    {!!pl.link && (
+                      <View style={styles.placeMetaRow}>
+                        <Feather name="link" size={11} color={C.muted} />
+                        <Text style={styles.placeMeta} numberOfLines={1}>{pl.link}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Feather name="chevron-right" size={20} color={C.muted} />
+                </Pressable>
+              ))}
+              {settings.places.filter((pl) => (pl.tagId ?? null) === placeTab).length === 0 && (
+                <Text style={styles.emptyHint}>No places here yet.</Text>
+              )}
+              <Pressable style={styles.addBtn} onPress={() => setPrompt({ title: 'New place', initial: '', submitLabel: 'Add', onSubmit: (t) => addPlace(t, placeTab) })}>
+                <Text style={styles.addBtnTxt}>＋ New place</Text>
+              </Pressable>
+            </Animated.View>
           </View>
         )}
 
         {cat === 'presets' && (
           <View style={{ marginTop: 10 }}>
-            <Text style={styles.section}>TIME PRESETS</Text>
-            <View style={styles.presetWrap}>
-              {settings.timePresets.map((p) => (
-                <View key={p} style={styles.presetChip}>
-                  <Text style={styles.presetTxt}>{fmt(p, settings.clock)}</Text>
-                  <Pressable hitSlop={8} onPress={() => updateSettings({ timePresets: settings.timePresets.filter((x) => x !== p) })}>
-                    <Feather name="x" size={13} color={C.faint} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
+              {[null, ...topTags.map((t) => t.id)].map((tid) => {
+                const t = tid ? topTags.find((x) => x.id === tid) : null;
+                const on = presetTab === tid;
+                return (
+                  <Pressable key={tid ?? 'global'} onPress={() => setPresetTab(tid)} style={[styles.tab, on && (t ? { backgroundColor: t.color } : styles.tabOn)]}>
+                    <Text style={[styles.tabTxt, { color: on ? '#0b0b0d' : C.textDim }]}>{t ? t.name : 'Global'}</Text>
                   </Pressable>
-                </View>
-              ))}
-              <Pressable style={styles.presetAdd} onPress={() => { setTempPreset(12 * 60); setAddPreset('time'); }}>
-                <Feather name="plus" size={14} color={C.accentA} />
-              </Pressable>
-            </View>
-            <Text style={styles.section}>DURATION PRESETS</Text>
-            <View style={styles.presetWrap}>
-              {settings.durationPresets.map((p) => (
-                <View key={p} style={styles.presetChip}>
-                  <Text style={styles.presetTxt}>{fmtDur(p)}</Text>
-                  <Pressable hitSlop={8} onPress={() => updateSettings({ durationPresets: settings.durationPresets.filter((x) => x !== p) })}>
-                    <Feather name="x" size={13} color={C.faint} />
-                  </Pressable>
-                </View>
-              ))}
-              <Pressable style={styles.presetAdd} onPress={() => { setTempPreset(30); setAddPreset('dur'); }}>
-                <Feather name="plus" size={14} color={C.accentA} />
-              </Pressable>
-            </View>
+                );
+              })}
+            </ScrollView>
+
+            <Animated.View key={`ps-${presetTab ?? 'x'}`} entering={FadeInDown.duration(240).springify().damping(18)}>
+              <Text style={styles.section}>{presetTab ? 'TIME PRESETS · TAG' : 'TIME PRESETS · GLOBAL'}</Text>
+              <View style={styles.presetWrap}>
+                {settings.timePresets.filter((p) => (p.tagId ?? null) === presetTab).map((p, i) => (
+                  <View key={`${p.value}-${i}`} style={styles.presetChip}>
+                    <Text style={styles.presetTxt}>{fmt(p.value, settings.clock)}</Text>
+                    <Pressable hitSlop={8} onPress={() => updateSettings({ timePresets: settings.timePresets.filter((x) => !(x.value === p.value && (x.tagId ?? null) === presetTab)) })}>
+                      <Feather name="x" size={13} color={C.faint} />
+                    </Pressable>
+                  </View>
+                ))}
+                <Pressable style={styles.presetAdd} onPress={() => { setTempPreset(12 * 60); setAddPreset('time'); }}>
+                  <Feather name="plus" size={14} color={C.accentA} />
+                </Pressable>
+              </View>
+
+              <Text style={styles.section}>{presetTab ? 'DURATION PRESETS · TAG' : 'DURATION PRESETS · GLOBAL'}</Text>
+              <View style={styles.presetWrap}>
+                {settings.durationPresets.filter((p) => (p.tagId ?? null) === presetTab).map((p, i) => (
+                  <View key={`${p.value}-${i}`} style={styles.presetChip}>
+                    <Text style={styles.presetTxt}>{fmtDur(p.value)}</Text>
+                    <Pressable hitSlop={8} onPress={() => updateSettings({ durationPresets: settings.durationPresets.filter((x) => !(x.value === p.value && (x.tagId ?? null) === presetTab)) })}>
+                      <Feather name="x" size={13} color={C.faint} />
+                    </Pressable>
+                  </View>
+                ))}
+                <Pressable style={styles.presetAdd} onPress={() => { setTempPreset(30); setAddPreset('dur'); }}>
+                  <Feather name="plus" size={14} color={C.accentA} />
+                </Pressable>
+              </View>
+
+              <Text style={styles.presetNote}>
+                {presetTab ? 'These appear only for tasks with this tag (in addition to global presets).' : 'These appear for every task. Pick a tag tab to add tag-specific presets.'}
+              </Text>
+            </Animated.View>
           </View>
         )}
 
@@ -270,7 +323,8 @@ export function SettingsScreen({
         clock={settings.clock}
         onChange={setTempPreset}
         onClose={() => {
-          if (!settings.timePresets.includes(tempPreset)) updateSettings({ timePresets: [...settings.timePresets, tempPreset].sort((a, b) => a - b) });
+          const exists = settings.timePresets.some((p) => p.value === tempPreset && (p.tagId ?? null) === presetTab);
+          if (!exists) updateSettings({ timePresets: [...settings.timePresets, { value: tempPreset, tagId: presetTab }] });
           setAddPreset(null);
         }}
       />
@@ -280,9 +334,25 @@ export function SettingsScreen({
         presets={[]}
         onChange={setTempPreset}
         onClose={() => {
-          if (!settings.durationPresets.includes(tempPreset)) updateSettings({ durationPresets: [...settings.durationPresets, tempPreset].sort((a, b) => a - b) });
+          const exists = settings.durationPresets.some((p) => p.value === tempPreset && (p.tagId ?? null) === presetTab);
+          if (!exists) updateSettings({ durationPresets: [...settings.durationPresets, { value: tempPreset, tagId: presetTab }] });
           setAddPreset(null);
         }}
+      />
+
+      <PlaceEditorPopup
+        visible={placeEdit != null}
+        place={settings.places.find((p) => p.id === placeEdit) || null}
+        tags={settings.tags}
+        onRename={(name) => placeEdit && renamePlace(placeEdit, name)}
+        onSetTag={(tagId) => placeEdit && setPlaceTag(placeEdit, tagId)}
+        onSetLink={(link) => placeEdit && setPlaceLink(placeEdit, link)}
+        onSetPhoto={(uri) => placeEdit && setPlacePhoto(placeEdit, uri)}
+        onDelete={() => {
+          if (placeEdit) deletePlace(placeEdit);
+          setPlaceEdit(null);
+        }}
+        onClose={() => setPlaceEdit(null)}
       />
 
       <CenterPopup open={colorPick != null} onClose={() => setColorPick(null)}>
@@ -362,6 +432,17 @@ const styles = StyleSheet.create({
   subChipTxt: { fontSize: 12.5, fontWeight: '600', color: C.textDim },
   addBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', backgroundColor: 'rgba(124,124,240,0.12)', boxShadow: 'inset 0 0 0 1px rgba(124,124,240,0.28)', marginTop: 4 },
   addBtnTxt: { fontSize: 14, fontWeight: '700', color: C.accentA },
+  tabBar: { gap: 8, paddingRight: 20, paddingBottom: 14 },
+  tab: { paddingHorizontal: 15, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  tabOn: { backgroundColor: C.accentB },
+  tabTxt: { fontSize: 13.5, fontWeight: '700' },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 8 },
+  placeThumb: { width: 42, height: 42, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.06)' },
+  placeThumbEmpty: { width: 42, height: 42, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  placeMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  placeMeta: { fontSize: 12, color: C.muted, flex: 1 },
+  emptyHint: { color: C.faint, fontSize: 13, paddingVertical: 14, textAlign: 'center' },
+  presetNote: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 16 },
   presetWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   presetChip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
   presetTxt: { fontSize: 13, fontWeight: '600', color: C.textDim, fontVariant: ['tabular-nums'] },

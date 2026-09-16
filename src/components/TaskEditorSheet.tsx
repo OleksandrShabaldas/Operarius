@@ -3,10 +3,12 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, EMOJIS, C } from '../theme';
-import { Clock, Draft, Place, Tag, TaskType } from '../types';
-import { dateLabel, fmt, fmtDur, findTag, genId, hexA, todayKey } from '../utils';
+import { Clock, Draft, Place, Preset, Tag, TaskType } from '../types';
+import { dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, todayKey } from '../utils';
 import { PlaceIcon } from './PlaceIcon';
 import { DatePickerPopup, DurationPickerPopup, SelectPopup, TimePickerPopup } from './pickers';
+import { RepeatPopup } from './RepeatPopup';
+import { PlaceSelectPopup } from './PlaceSelectPopup';
 import { BottomSheet, CenterPopup } from './Overlay';
 import { Tappable } from './anim';
 
@@ -16,15 +18,15 @@ type Props = {
   places: Place[];
   clock: Clock;
   weekStart: 'mon' | 'sun';
-  timePresets: number[];
-  durationPresets: number[];
+  timePresets: Preset[];
+  durationPresets: Preset[];
   onPatch: (patch: Partial<Draft>) => void;
   onSave: () => void;
   onDelete: () => void;
   onClose: () => void;
 };
 
-type Picker = 'icon' | 'start' | 'end' | 'dur' | 'date' | 'tag' | 'place' | null;
+type Picker = 'icon' | 'start' | 'end' | 'dur' | 'date' | 'tag' | 'place' | 'repeat' | null;
 
 const TYPES: { id: TaskType; label: string }[] = [
   { id: 'planned', label: 'Planned' },
@@ -68,6 +70,9 @@ export function TaskEditorSheet({
       tags.filter((t) => t.parentId === top.id).forEach((sub) => tagOptions.push({ id: sub.id, label: '    ↳  ' + sub.name }));
     });
   const selTag = d ? findTag(tags, d.tagId) : null;
+  const topTagId = selTag ? selTag.parentId ?? selTag.id : null;
+  const tPresets = timePresets.filter((p) => p.tagId == null || p.tagId === topTagId).map((p) => p.value);
+  const dPresets = durationPresets.filter((p) => p.tagId == null || p.tagId === topTagId).map((p) => p.value);
 
   const addSubtask = () => d && onPatch({ subtasks: [...d.subtasks, { id: genId(), title: '', done: false }] });
   const patchSubtask = (id: string, title: string) =>
@@ -125,6 +130,7 @@ export function TaskEditorSheet({
             )}
 
             {d.type !== 'todo' && <FieldCard label="DATE" value={dateLabel(d.date)} onPress={() => setPicker('date')} full />}
+            {d.type !== 'todo' && <FieldCard label="REPEAT" value={repeatSummary(d.repeat)} onPress={() => setPicker('repeat')} full />}
 
             <View style={styles.cardRow}>
               <Tappable style={styles.selCard} onPress={() => setPicker('tag')}>
@@ -231,12 +237,13 @@ export function TaskEditorSheet({
         )}
       </CenterPopup>
 
-      <TimePickerPopup visible={picker === 'start'} title="Start" value={d?.start ?? 0} presets={timePresets} clock={clock} onChange={(v) => onPatch({ start: v })} onClose={() => setPicker(null)} />
-      <TimePickerPopup visible={picker === 'end'} title="End" value={end} presets={timePresets} clock={clock} onChange={(v) => d && onPatch({ dur: Math.max(5, v - d.start) })} onClose={() => setPicker(null)} />
-      <DurationPickerPopup visible={picker === 'dur'} value={d?.dur ?? 30} presets={durationPresets} onChange={(v) => onPatch({ dur: v })} onClose={() => setPicker(null)} />
+      <TimePickerPopup visible={picker === 'start'} title="Start" value={d?.start ?? 0} presets={tPresets} clock={clock} onChange={(v) => onPatch({ start: v })} onClose={() => setPicker(null)} />
+      <TimePickerPopup visible={picker === 'end'} title="End" value={end} presets={tPresets} clock={clock} onChange={(v) => d && onPatch({ dur: Math.max(5, v - d.start) })} onClose={() => setPicker(null)} />
+      <DurationPickerPopup visible={picker === 'dur'} value={d?.dur ?? 30} presets={dPresets} onChange={(v) => onPatch({ dur: v })} onClose={() => setPicker(null)} />
       <DatePickerPopup visible={picker === 'date'} value={d?.date || todayKey()} weekStart={weekStart} onChange={(key) => onPatch({ date: key })} onClose={() => setPicker(null)} />
       <SelectPopup visible={picker === 'tag'} title="Select tag" options={tagOptions} selectedId={d?.tagId ?? null} emptyText="No tags yet — add some in Settings." onSelect={(id) => onPatch({ tagId: id })} onClose={() => setPicker(null)} />
-      <SelectPopup visible={picker === 'place'} title="Select place" options={places.map((p) => ({ id: p.id, label: p.name }))} selectedId={d?.placeId ?? null} emptyText="No places yet — add some in Settings." onSelect={(id) => onPatch({ placeId: id })} onClose={() => setPicker(null)} />
+      <PlaceSelectPopup visible={picker === 'place'} places={places} tags={tags} selectedId={d?.placeId ?? null} taskTagId={d?.tagId ?? null} onSelect={(id) => onPatch({ placeId: id })} onClose={() => setPicker(null)} />
+      <RepeatPopup visible={picker === 'repeat'} repeat={d?.repeat ?? null} baseDate={d?.date || todayKey()} weekStart={weekStart} onChange={(r) => onPatch({ repeat: r })} onClose={() => setPicker(null)} />
     </>
   );
 }

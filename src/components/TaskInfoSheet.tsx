@@ -1,12 +1,12 @@
-import React, { useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Clock, Place, Tag, Task } from '../types';
-import { fmt, fmtDur, hexA, dateLabel, findTag, placeLabel } from '../utils';
+import { fmt, fmtDur, hexA, dateLabel, findTag, placeLabel, repeatSummary } from '../utils';
 import { PlaceIcon } from './PlaceIcon';
-import { BottomSheet } from './Overlay';
+import { BottomSheet, CenterPopup } from './Overlay';
 import { Tappable } from './anim';
 
 export function TaskInfoSheet({
@@ -32,12 +32,21 @@ export function TaskInfoSheet({
   const tRef = useRef<Task | null>(task);
   if (task) tRef.current = task;
   const t = task ?? tRef.current;
+  const [photoPreview, setPhotoPreview] = useState(false);
 
   const tag = t ? findTag(tags, t.tagId) : null;
   const tagColor = tag?.color || t?.color || C.accentA;
+  const place = t && t.placeId ? places.find((p) => p.id === t.placeId) || null : null;
   const placeTxt = t ? placeLabel(places, t.placeId) : '';
   const typeLabel = t?.type === 'allday' ? 'All-day' : t?.type === 'todo' ? 'To-do' : 'Planned';
   const doneCount = t ? t.subtasks.filter((s) => s.done).length : 0;
+
+  const openPlace = () => {
+    if (!place) return;
+    const q = encodeURIComponent(place.link || place.name);
+    const url = place.link.startsWith('http') ? place.link : `https://www.google.com/maps/search/?api=1&query=${q}`;
+    Linking.openURL(url).catch(() => {});
+  };
 
   return (
     <BottomSheet open={visible} onClose={onClose}>
@@ -57,6 +66,7 @@ export function TaskInfoSheet({
 
           {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
           {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} />}
+          {!!t.repeat && <InfoRow icon="repeat" text={repeatSummary(t.repeat)} />}
 
           {(!!tag || !!placeTxt) && (
             <View style={styles.metaRow}>
@@ -65,11 +75,16 @@ export function TaskInfoSheet({
                   <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
                 </View>
               )}
-              {!!placeTxt && (
-                <View style={[styles.chip, styles.placeChip]}>
+              {!!place && (
+                <Tappable
+                  onPress={openPlace}
+                  onLongPress={() => place.photoUri && setPhotoPreview(true)}
+                  style={[styles.chip, styles.placeChip]}>
                   <PlaceIcon size={11} color={C.textDim} />
-                  <Text style={styles.placeTxt}>{placeTxt}</Text>
-                </View>
+                  <Text style={styles.placeTxt}>{place.name}</Text>
+                  {place.photoUri && <Feather name="image" size={11} color={C.muted} />}
+                  <Feather name={place.link ? 'external-link' : 'map-pin'} size={11} color={C.accentB} />
+                </Tappable>
               )}
             </View>
           )}
@@ -105,6 +120,15 @@ export function TaskInfoSheet({
               </LinearGradient>
             </Tappable>
           </View>
+
+          <CenterPopup open={photoPreview} onClose={() => setPhotoPreview(false)}>
+            {place?.photoUri && (
+              <>
+                <Text style={styles.previewTitle}>{place.name}</Text>
+                <Image source={{ uri: place.photoUri }} style={styles.previewImg} resizeMode="cover" />
+              </>
+            )}
+          </CenterPopup>
         </ScrollView>
       )}
     </BottomSheet>
@@ -135,6 +159,8 @@ const styles = StyleSheet.create({
   chipTxt: { fontSize: 12, fontWeight: '600' },
   placeChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)' },
   placeTxt: { fontSize: 12, fontWeight: '600', color: C.textDim },
+  previewTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 12 },
+  previewImg: { width: '100%', height: 240, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' },
   section: { fontSize: 11, color: C.muted, fontWeight: '700', marginTop: 16, marginBottom: 10, letterSpacing: 0.3 },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 9 },
   subCheck: { width: 22, height: 22, borderRadius: 7, boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },

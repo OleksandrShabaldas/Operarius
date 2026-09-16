@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Place, Settings, Tag, Task } from './types';
+import { Place, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
 import {
   DEFAULT_DAY_START,
   DEFAULT_DAY_END,
@@ -31,9 +31,12 @@ export const DEFAULT_TAGS: Tag[] = [
 ];
 
 export const DEFAULT_PLACES: Place[] = [
-  { id: 'home', name: 'Home' },
-  { id: 'office', name: 'Office' },
+  { id: 'home', name: 'Home', tagId: null, link: '', photoUri: null },
+  { id: 'office', name: 'Office', tagId: 'work', link: '', photoUri: null },
 ];
+
+const toPresets = (vals: number[]): { value: number; tagId: string | null }[] =>
+  vals.map((v) => ({ value: v, tagId: null }));
 
 export const DEFAULT_SETTINGS: Settings = {
   dayStart: DEFAULT_DAY_START,
@@ -43,9 +46,25 @@ export const DEFAULT_SETTINGS: Settings = {
   gapThreshold: DEFAULT_GAP_THRESHOLD,
   tags: DEFAULT_TAGS,
   places: DEFAULT_PLACES,
-  timePresets: DEFAULT_TIME_PRESETS,
-  durationPresets: DEFAULT_DURATION_PRESETS,
+  timePresets: toPresets(DEFAULT_TIME_PRESETS),
+  durationPresets: toPresets(DEFAULT_DURATION_PRESETS),
 };
+
+// Normalize a persisted preset list (older builds stored plain numbers).
+function migratePresets(raw: any, fallback: { value: number; tagId: string | null }[]) {
+  if (!Array.isArray(raw) || raw.length === 0) return fallback;
+  return raw.map((p) => (typeof p === 'number' ? { value: p, tagId: null } : { value: p.value, tagId: p.tagId ?? null }));
+}
+
+function migratePlace(raw: any): Place {
+  return {
+    id: String(raw.id),
+    name: raw.name ?? 'Place',
+    tagId: typeof raw.tagId === 'string' ? raw.tagId : null,
+    link: typeof raw.link === 'string' ? raw.link : '',
+    photoUri: typeof raw.photoUri === 'string' ? raw.photoUri : null,
+  };
+}
 
 // Migrate a persisted task from older shapes (e.g. `tag` string) to the current one.
 function migrateTask(raw: any): Task {
@@ -70,6 +89,21 @@ function migrateTask(raw: any): Task {
     date: type === 'todo' ? null : (raw.date ?? null),
     notes: typeof raw.notes === 'string' ? raw.notes : '',
     subtasks: Array.isArray(raw.subtasks) ? raw.subtasks : [],
+    repeat: migrateRepeat(raw.repeat),
+    doneDates: Array.isArray(raw.doneDates) ? raw.doneDates.filter((d: any) => typeof d === 'string') : [],
+  };
+}
+
+function migrateRepeat(raw: any): Repeat | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const freqs: RepeatFreq[] = ['daily', 'weekly', 'monthly', 'yearly'];
+  if (!freqs.includes(raw.freq)) return null;
+  return {
+    freq: raw.freq,
+    interval: Math.max(1, Number(raw.interval) || 1),
+    weekdays: Array.isArray(raw.weekdays) ? raw.weekdays.filter((n: any) => typeof n === 'number') : [],
+    monthlyMode: raw.monthlyMode === 'weekday' ? 'weekday' : 'date',
+    endDate: typeof raw.endDate === 'string' ? raw.endDate : null,
   };
 }
 
@@ -113,13 +147,9 @@ export const localRepository: Repository = {
           ...t,
           color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
         })),
-        places: Array.isArray(parsed.places) ? parsed.places : DEFAULT_PLACES,
-        timePresets:
-          Array.isArray(parsed.timePresets) && parsed.timePresets.length ? parsed.timePresets : DEFAULT_TIME_PRESETS,
-        durationPresets:
-          Array.isArray(parsed.durationPresets) && parsed.durationPresets.length
-            ? parsed.durationPresets
-            : DEFAULT_DURATION_PRESETS,
+        places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
+        timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
+        durationPresets: migratePresets(parsed.durationPresets, toPresets(DEFAULT_DURATION_PRESETS)),
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -151,7 +181,7 @@ export const localRepository: Repository = {
 // The sample day from the prototype, seeded onto the first launch so a new
 // install opens looking exactly like the design.
 export function seedTasks(todayKey: string): Task[] {
-  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks'>[] = [
+  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks' | 'repeat' | 'doneDates'>[] = [
     { title: 'Morning run', emoji: '🏃', color: '#5FD08A', start: 7 * 60, dur: 30, done: true, tagId: 'health', placeId: null },
     { title: 'Shower', emoji: '🚿', color: '#5B9DF9', start: 8 * 60, dur: 15, done: false, tagId: null, placeId: null },
     { title: 'Breakfast', emoji: '🍳', color: '#F2C14E', start: 8 * 60 + 15, dur: 30, done: false, tagId: null, placeId: null },
@@ -169,5 +199,7 @@ export function seedTasks(todayKey: string): Task[] {
     date: todayKey,
     notes: '',
     subtasks: [],
+    repeat: null,
+    doneDates: [],
   }));
 }

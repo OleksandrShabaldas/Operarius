@@ -10,6 +10,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { C } from './src/theme';
 import { AppProvider, useApp } from './src/store';
 import { Draft, TaskType } from './src/types';
+import { parseId } from './src/recurrence';
 import { todayKey } from './src/utils';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TodoScreen } from './src/screens/TodoScreen';
@@ -120,6 +121,8 @@ function Root() {
         date: type === 'todo' ? null : selectedKey,
         notes: '',
         subtasks: [],
+        repeat: null,
+        doneDates: [],
       });
     },
     [tab, selectedKey, settings.dayStart, settings.dayEnd, tasksForDay]
@@ -127,8 +130,8 @@ function Root() {
 
   const editFromInfo = useCallback(() => {
     setViewId((id) => {
-      const t = id ? tasks.find((x) => x.id === id) : null;
-      if (t) setDraft({ ...t });
+      const base = id ? tasks.find((x) => x.id === parseId(id).baseId) : null;
+      if (base) setDraft({ ...base }); // editing a repeating task edits the whole series
       return null;
     });
   }, [tasks]);
@@ -149,7 +152,14 @@ function Root() {
 
   if (!loaded) return <View style={styles.bg} />;
 
-  const viewTask = viewId ? tasks.find((t) => t.id === viewId) ?? null : null;
+  // Resolve the info-sheet target — a repeating occurrence is reconstructed
+  // from its base with the right date and per-occurrence done state.
+  let viewTask = null as (typeof tasks)[number] | null;
+  if (viewId) {
+    const { baseId, date } = parseId(viewId);
+    const base = tasks.find((t) => t.id === baseId) || null;
+    viewTask = base && base.repeat && date ? { ...base, id: viewId, date, done: base.doneDates.includes(date) } : base;
+  }
 
   return (
     <View style={styles.bg}>

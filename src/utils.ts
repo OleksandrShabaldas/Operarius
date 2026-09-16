@@ -1,5 +1,5 @@
 import { DOW, MONTHS, WEEKDAYS_FULL } from './theme';
-import { Clock, Place, Tag, WeekStart } from './types';
+import { Clock, Place, Repeat, Tag, WeekStart } from './types';
 
 // hex -> rgba string with alpha
 export function hexA(hex: string, a: number): string {
@@ -115,6 +115,20 @@ export function tagLabel(tags: Tag[], id: string | null): string {
 export function placeLabel(places: Place[], id: string | null): string {
   const p = id ? places.find((x) => x.id === id) : null;
   return p ? p.name : '';
+}
+
+const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Human-readable recurrence rule, e.g. "Every 2 weeks · Mon, Wed" or "Every month".
+export function repeatSummary(r: Repeat | null): string {
+  if (!r) return 'Does not repeat';
+  const n = r.interval;
+  const unit = r.freq === 'daily' ? 'day' : r.freq === 'weekly' ? 'week' : r.freq === 'monthly' ? 'month' : 'year';
+  const every = n > 1 ? `Every ${n} ${unit}s` : `Every ${unit}`;
+  if (r.freq === 'weekly' && r.weekdays.length) {
+    const days = [...r.weekdays].sort((a, b) => a - b).map((d) => DOW3[d]).join(', ');
+    return `${every} · ${days}`;
+  }
+  return every;
 }
 
 // "Today" / "Tomorrow" / "Yesterday" / "Tue, Sep 15"

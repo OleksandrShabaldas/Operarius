@@ -2,6 +2,16 @@ export type TaskType = 'planned' | 'allday' | 'todo';
 
 export type Subtask = { id: string; title: string; done: boolean };
 
+export type RepeatFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export type Repeat = {
+  freq: RepeatFreq;
+  interval: number; // every N days/weeks/months/years
+  weekdays: number[]; // weekly only: 0=Sun … 6=Sat
+  monthlyMode: 'date' | 'weekday'; // monthly: same day-of-month, or same weekday-of-month
+  endDate: string | null; // YYYY-MM-DD, or null = forever
+};
+
 export type Task = {
   id: string;
   title: string;
@@ -10,12 +20,14 @@ export type Task = {
   type: TaskType;
   start: number; // minutes from midnight (planned only)
   dur: number; // minutes (planned only)
-  done: boolean;
+  done: boolean; // non-repeating completion
   tagId: string | null; // references Settings.tags
   placeId: string | null; // references Settings.places
-  date: string | null; // YYYY-MM-DD for planned/allday; null for to-do
+  date: string | null; // YYYY-MM-DD for planned/allday; null for to-do (base/first date if repeating)
   notes: string;
   subtasks: Subtask[];
+  repeat: Repeat | null; // recurrence rule (planned/allday)
+  doneDates: string[]; // per-occurrence completion for repeating tasks
 };
 
 // A task being composed/edited in the editor sheet. `id` is absent when new.
@@ -27,8 +39,18 @@ export type Clock = '12h' | '24h';
 // User-defined tag. Top-level when parentId is null, otherwise a sub-tag.
 export type Tag = { id: string; name: string; parentId: string | null; color: string };
 
-// User-defined place, shown like a tag but with a location marker.
-export type Place = { id: string; name: string };
+// User-defined place. May belong to a (top-level) tag, carry an open-able link,
+// and hold a photo.
+export type Place = {
+  id: string;
+  name: string;
+  tagId: string | null; // top-level tag it's filed under (null = Untagged)
+  link: string; // URL to open (a Google Maps link, or anything)
+  photoUri: string | null; // local persisted image URI
+};
+
+// A quick-pick preset, optionally scoped to a top-level tag (null = global).
+export type Preset = { value: number; tagId: string | null };
 
 export type Settings = {
   dayStart: number; // minutes from midnight (visible window start)
@@ -38,6 +60,6 @@ export type Settings = {
   gapThreshold: number; // minutes: gaps <= this show a pill, larger show a free block
   tags: Tag[];
   places: Place[];
-  timePresets: number[]; // minutes-of-day quick picks for start/end
-  durationPresets: number[]; // minute quick picks for duration
+  timePresets: Preset[]; // minutes-of-day quick picks for start/end
+  durationPresets: Preset[]; // minute quick picks for duration
 };

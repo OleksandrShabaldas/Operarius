@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Draft, Settings, Task } from './types';
 import { DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
 import { COLORS } from './theme';
+import { expandForDay, parseId } from './recurrence';
 import { genId, todayKey } from './utils';
 
 type Ctx = {
@@ -23,8 +24,11 @@ type Ctx = {
   renameTag: (id: string, name: string) => void;
   setTagColor: (id: string, color: string) => void;
   deleteTag: (id: string) => void;
-  addPlace: (name: string) => void;
+  addPlace: (name: string, tagId?: string | null) => void;
   renamePlace: (id: string, name: string) => void;
+  setPlaceTag: (id: string, tagId: string | null) => void;
+  setPlaceLink: (id: string, link: string) => void;
+  setPlacePhoto: (id: string, photoUri: string | null) => void;
   deletePlace: (id: string) => void;
 };
 
@@ -78,10 +82,8 @@ export function AppProvider({
     if (didLoad.current) repo.saveSettings(settings);
   }, [settings, repo]);
 
-  const tasksForDay = useCallback(
-    (dateKey: string) => tasks.filter((t) => t.date === dateKey),
-    [tasks]
-  );
+  // Expanded instances for a day (single tasks + repeating occurrences).
+  const tasksForDay = useCallback((dateKey: string) => expandForDay(tasks, dateKey), [tasks]);
 
   const saveDraft = useCallback((draft: Draft) => {
     const title = draft.title.trim() === '' ? 'Untitled' : draft.title.trim();
@@ -95,17 +97,30 @@ export function AppProvider({
   }, []);
 
   const deleteTask = useCallback((id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    const { baseId } = parseId(id);
+    setTasks((prev) => prev.filter((t) => t.id !== baseId));
   }, []);
 
+  // Toggle completion — per-occurrence (doneDates) for a repeating instance.
   const toggleDone = useCallback((id: string) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+    const { baseId, date } = parseId(id);
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== baseId) return t;
+        if (t.repeat && date) {
+          const has = t.doneDates.includes(date);
+          return { ...t, doneDates: has ? t.doneDates.filter((d) => d !== date) : [...t.doneDates, date] };
+        }
+        return { ...t, done: !t.done };
+      })
+    );
   }, []);
 
   const toggleSubtask = useCallback((taskId: string, subId: string) => {
+    const { baseId } = parseId(taskId);
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === taskId
+        t.id === baseId
           ? { ...t, subtasks: t.subtasks.map((s) => (s.id === subId ? { ...s, done: !s.done } : s)) }
           : t
       )
@@ -113,7 +128,8 @@ export function AppProvider({
   }, []);
 
   const moveTask = useCallback((id: string, start: number) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, start } : t)));
+    const { baseId } = parseId(id);
+    setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, start } : t)));
   }, []);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -161,16 +177,26 @@ export function AppProvider({
     setTasks((prev) => prev.map((t) => (t.tagId && removed.has(t.tagId) ? { ...t, tagId: null } : t)));
   }, []);
 
-  const addPlace = useCallback((name: string) => {
+  const addPlace = useCallback((name: string, tagId: string | null = null) => {
     const n = name.trim();
     if (!n) return;
-    setSettings((prev) => ({ ...prev, places: [...prev.places, { id: genId(), name: n }] }));
+    setSettings((prev) => ({ ...prev, places: [...prev.places, { id: genId(), name: n, tagId, link: '', photoUri: null }] }));
   }, []);
 
   const renamePlace = useCallback((id: string, name: string) => {
     const n = name.trim();
     if (!n) return;
     setSettings((prev) => ({ ...prev, places: prev.places.map((p) => (p.id === id ? { ...p, name: n } : p)) }));
+  }, []);
+
+  const setPlaceTag = useCallback((id: string, tagId: string | null) => {
+    setSettings((prev) => ({ ...prev, places: prev.places.map((p) => (p.id === id ? { ...p, tagId } : p)) }));
+  }, []);
+  const setPlaceLink = useCallback((id: string, link: string) => {
+    setSettings((prev) => ({ ...prev, places: prev.places.map((p) => (p.id === id ? { ...p, link } : p)) }));
+  }, []);
+  const setPlacePhoto = useCallback((id: string, photoUri: string | null) => {
+    setSettings((prev) => ({ ...prev, places: prev.places.map((p) => (p.id === id ? { ...p, photoUri } : p)) }));
   }, []);
 
   const deletePlace = useCallback((id: string) => {
@@ -198,6 +224,9 @@ export function AppProvider({
     deleteTag,
     addPlace,
     renamePlace,
+    setPlaceTag,
+    setPlaceLink,
+    setPlacePhoto,
     deletePlace,
   };
 

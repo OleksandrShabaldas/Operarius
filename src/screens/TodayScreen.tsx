@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, PX, TOPBAND } from '../theme';
 import { TaskType } from '../types';
 import { useApp } from '../store';
-import { addDays, headerParts, hexA, todayKey } from '../utils';
+import { addDays, headerParts, hexA, todayKey, weekOf } from '../utils';
+import { occursOn } from '../recurrence';
 import { WeekStrip } from '../components/WeekStrip';
 import { Timeline } from '../components/Timeline';
 import { Tappable } from '../components/anim';
@@ -46,7 +47,17 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   const allday = dayTasks.filter((t) => t.type === 'allday');
   const { dayNum, weekday, month } = headerParts(selectedKey);
   const isToday = selectedKey === todayKey();
-  const daysWithTasks = useMemo(() => new Set(tasks.filter((t) => t.date).map((t) => t.date as string)), [tasks]);
+  // Dots under the visible week — honours recurrence, so a day whose only task
+  // is a repeat occurrence still gets marked.
+  const visibleWeek = useMemo(() => weekOf(selectedKey, settings.weekStart), [selectedKey, settings.weekStart]);
+  const daysWithTasks = useMemo(() => {
+    const set = new Set<string>();
+    for (const key of visibleWeek) {
+      if (tasks.some((t) => t.type !== 'todo' && occursOn(t, key))) set.add(key);
+    }
+    return set;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, visibleWeek.join(',')]);
 
   const [drag, setDrag] = useState<{ id: string; min: number } | null>(null);
   const dragMinRef = useRef(0);

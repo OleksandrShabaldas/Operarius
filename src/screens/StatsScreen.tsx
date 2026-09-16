@@ -6,6 +6,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native
 import { C, COLORS } from '../theme';
 import { useApp } from '../store';
 import { fmtHours, todayKey, weekdayLetters, weekOf } from '../utils';
+import { expandForDay } from '../recurrence';
 import { Tappable } from '../components/anim';
 
 const Pressable = Tappable; // press feedback on the back button, segments and bars
@@ -28,8 +29,10 @@ export function StatsScreen({
   const letters = weekdayLetters(settings.weekStart);
 
   const rangeKeys = range === 'today' ? [today] : week;
+  // Expand recurrence per day so repeating tasks are counted on every day they
+  // occur, with per-occurrence completion.
   const rangeTasks = useMemo(
-    () => tasks.filter((t) => t.type === 'planned' && t.date != null && rangeKeys.includes(t.date)),
+    () => rangeKeys.flatMap((k) => expandForDay(tasks, k)).filter((t) => t.type === 'planned'),
     [tasks, rangeKeys.join(',')]
   );
 
@@ -45,7 +48,7 @@ export function StatsScreen({
   const perDay = useMemo(
     () =>
       week.map((key) => {
-        const dt = tasks.filter((t) => t.type === 'planned' && t.date === key);
+        const dt = expandForDay(tasks, key).filter((t) => t.type === 'planned');
         return {
           key,
           sched: dt.reduce((s, t) => s + t.dur, 0),

@@ -10,6 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Place, Tag, Task } from '../types';
 import { C, PX } from '../theme';
@@ -56,9 +57,12 @@ function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number
       </LinearGradient>
       <View style={styles.body}>
         <Text numberOfLines={1} style={[styles.title, task.done && styles.strike]}>{task.title}</Text>
-        <Text numberOfLines={1} style={styles.time}>
-          {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
-        </Text>
+        <View style={styles.timeRow}>
+          <Text numberOfLines={1} style={styles.time}>
+            {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
+          </Text>
+          {!!task.repeat && <Feather name="repeat" size={10.5} color={C.muted} style={styles.repeatIcon} />}
+        </View>
         {(!!tag || !!placeTxt) && (
           <View style={styles.metaRow}>
             {!!tag && (
@@ -210,8 +214,10 @@ const styles = StyleSheet.create({
   body: { flex: 1, minWidth: 0 },
   title: { fontSize: 15.5, fontWeight: '600', letterSpacing: -0.2, color: C.text },
   strike: { textDecorationLine: 'line-through', color: '#6a6a72' },
-  time: { fontSize: 12.5, color: C.muted, marginTop: 3, fontVariant: ['tabular-nums'] },
+  timeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  time: { fontSize: 12.5, color: C.muted, fontVariant: ['tabular-nums'] },
   dur: { color: C.faint },
+  repeatIcon: { marginLeft: 5 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 },
   chip: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, borderWidth: 1 },
   chipTxt: { fontSize: 10, fontWeight: '600' },

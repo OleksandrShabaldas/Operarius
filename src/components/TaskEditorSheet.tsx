@@ -28,10 +28,10 @@ type Props = {
 
 type Picker = 'icon' | 'start' | 'end' | 'dur' | 'date' | 'tag' | 'place' | 'repeat' | null;
 
-const TYPES: { id: TaskType; label: string }[] = [
-  { id: 'planned', label: 'Planned' },
-  { id: 'allday', label: 'All-day' },
-  { id: 'todo', label: 'To-do' },
+const TYPES: { id: TaskType; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { id: 'planned', label: 'Planned', icon: 'clock' },
+  { id: 'allday', label: 'All-day', icon: 'sun' },
+  { id: 'todo', label: 'To-do', icon: 'check-circle' },
 ];
 
 export function TaskEditorSheet({
@@ -49,9 +49,14 @@ export function TaskEditorSheet({
 }: Props) {
   const visible = !!draft;
   const [picker, setPicker] = useState<Picker>(null);
+  const [attempted, setAttempted] = useState(false);
+  const nameRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    if (visible) setPicker(null);
+    if (visible) {
+      setPicker(null);
+      setAttempted(false);
+    }
   }, [visible, draft?.id]);
 
   // Keep the last draft during the close animation so content still renders.
@@ -60,6 +65,7 @@ export function TaskEditorSheet({
   const d = draft ?? dRef.current;
   const isEditing = !!d?.id;
   const end = d ? d.start + d.dur : 0;
+  const canSave = !!d?.title.trim();
 
   // Group sub-tags under their parent so both are selectable in the picker.
   const tagOptions: { id: string; label: string }[] = [];
@@ -71,8 +77,11 @@ export function TaskEditorSheet({
     });
   const selTag = d ? findTag(tags, d.tagId) : null;
   const topTagId = selTag ? selTag.parentId ?? selTag.id : null;
-  const tPresets = timePresets.filter((p) => p.tagId == null || p.tagId === topTagId).map((p) => p.value);
-  const dPresets = durationPresets.filter((p) => p.tagId == null || p.tagId === topTagId).map((p) => p.value);
+  const topTagName = topTagId ? tags.find((t) => t.id === topTagId)?.name ?? null : null;
+  const gTime = timePresets.filter((p) => p.tagId == null).map((p) => p.value);
+  const tTime = topTagId ? timePresets.filter((p) => p.tagId === topTagId).map((p) => p.value) : [];
+  const gDur = durationPresets.filter((p) => p.tagId == null).map((p) => p.value);
+  const tDur = topTagId ? durationPresets.filter((p) => p.tagId === topTagId).map((p) => p.value) : [];
 
   const addSubtask = () => d && onPatch({ subtasks: [...d.subtasks, { id: genId(), title: '', done: false }] });
   const patchSubtask = (id: string, title: string) =>
@@ -81,121 +90,174 @@ export function TaskEditorSheet({
     d && onPatch({ subtasks: d.subtasks.map((s) => (s.id === id ? { ...s, done: !s.done } : s)) });
   const removeSub = (id: string) => d && onPatch({ subtasks: d.subtasks.filter((s) => s.id !== id) });
 
+  const attemptSave = () => {
+    if (!canSave) {
+      setAttempted(true);
+      nameRef.current?.focus();
+      return;
+    }
+    onSave();
+  };
+
+  const placeName = d?.placeId ? places.find((p) => p.id === d.placeId)?.name : null;
+
   return (
     <>
-      <BottomSheet open={visible} onClose={onClose} height="80%" avoidKeyboard>
+      <BottomSheet open={visible} onClose={onClose} height="88%" avoidKeyboard>
         {d && (
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
-            <View style={styles.titleRow}>
-              <Tappable onPress={() => setPicker('icon')}>
-                <LinearGradient
-                  colors={[d.color, hexA(d.color, 0.75)]}
-                  start={{ x: 0.1, y: 0 }}
-                  end={{ x: 0.9, y: 1 }}
-                  style={[styles.marker, { boxShadow: `0 6px 16px -4px ${hexA(d.color, 0.7)}` }]}>
-                  <Text style={styles.markerTxt}>{d.emoji}</Text>
-                  <View style={styles.markerEdit}>
-                    <Feather name="edit-2" size={9} color={C.textDim} />
-                  </View>
-                </LinearGradient>
-              </Tappable>
-              <TextInput
-                value={d.title}
-                onChangeText={(title) => onPatch({ title })}
-                placeholder="Task name"
-                placeholderTextColor={C.faint}
-                style={styles.titleInput}
-              />
-            </View>
-
-            <View style={styles.segment}>
-              {TYPES.map((t) => {
-                const on = d.type === t.id;
-                return (
-                  <Tappable key={t.id} onPress={() => onPatch({ type: t.id })} style={[styles.segBtn, on && styles.segBtnOn]}>
-                    <Text style={[styles.segTxt, { color: on ? '#0b0b0d' : C.textDim }]}>{t.label}</Text>
-                  </Tappable>
-                );
-              })}
-            </View>
-
-            {d.type === 'planned' && (
-              <>
-                <View style={styles.cardRow}>
-                  <FieldCard label="START" value={fmt(d.start, clock)} onPress={() => setPicker('start')} />
-                  <FieldCard label="END" value={fmt(end, clock)} onPress={() => setPicker('end')} />
-                </View>
-                <FieldCard label="DURATION" value={fmtDur(d.dur)} onPress={() => setPicker('dur')} full />
-              </>
-            )}
-
-            {d.type !== 'todo' && <FieldCard label="DATE" value={dateLabel(d.date)} onPress={() => setPicker('date')} full />}
-            {d.type !== 'todo' && <FieldCard label="REPEAT" value={repeatSummary(d.repeat)} onPress={() => setPicker('repeat')} full />}
-
-            <View style={styles.cardRow}>
-              <Tappable style={styles.selCard} onPress={() => setPicker('tag')}>
-                <Text style={styles.selLabel}>TAG</Text>
-                <Text style={[styles.selVal, { color: selTag ? selTag.color : C.faint }]} numberOfLines={1}>
-                  {selTag ? selTag.name : 'Select tag'}
-                </Text>
-              </Tappable>
-              <Tappable style={styles.selCard} onPress={() => setPicker('place')}>
-                <Text style={styles.selLabel}>PLACE</Text>
-                <View style={styles.selPlaceRow}>
-                  {!!d.placeId && <PlaceIcon size={12} color={C.textDim} />}
-                  <Text style={[styles.selVal, { color: d.placeId ? C.text : C.faint }]} numberOfLines={1}>
-                    {d.placeId ? places.find((p) => p.id === d.placeId)?.name || 'Select place' : 'Select place'}
-                  </Text>
-                </View>
+          <>
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>{isEditing ? 'Edit task' : 'New task'}</Text>
+              <Tappable onPress={onClose} hitSlop={8} style={styles.closeBtn}>
+                <Feather name="x" size={20} color={C.textDim} />
               </Tappable>
             </View>
 
-            <Text style={styles.section}>SUBTASKS</Text>
-            {d.subtasks.map((s) => (
-              <View key={s.id} style={styles.subRow}>
-                <Tappable onPress={() => toggleSub(s.id)} style={[styles.subCheck, s.done && { backgroundColor: d.color }]}>
-                  {s.done && <Feather name="check" size={13} color="#0b0b0d" />}
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false} contentContainerStyle={{ paddingBottom: 8 }}>
+              {/* Name + icon/color marker */}
+              <View style={styles.titleRow}>
+                <Tappable onPress={() => setPicker('icon')}>
+                  <LinearGradient
+                    colors={[d.color, hexA(d.color, 0.75)]}
+                    start={{ x: 0.1, y: 0 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={[styles.marker, { boxShadow: `0 6px 16px -4px ${hexA(d.color, 0.7)}` }]}>
+                    <Text style={styles.markerTxt}>{d.emoji}</Text>
+                    <View style={styles.markerEdit}>
+                      <Feather name="edit-2" size={9} color={C.textDim} />
+                    </View>
+                  </LinearGradient>
                 </Tappable>
-                <TextInput
-                  value={s.title}
-                  onChangeText={(t) => patchSubtask(s.id, t)}
-                  placeholder="Subtask"
-                  placeholderTextColor={C.faint}
-                  style={[styles.subInput, s.done && styles.subDone]}
-                />
-                <Tappable onPress={() => removeSub(s.id)} hitSlop={8} style={styles.subX}>
-                  <Feather name="x" size={15} color={C.faint} />
-                </Tappable>
+                <View style={{ flex: 1 }}>
+                  <TextInput
+                    ref={nameRef}
+                    value={d.title}
+                    onChangeText={(title) => {
+                      onPatch({ title });
+                      if (attempted && title.trim()) setAttempted(false);
+                    }}
+                    placeholder="Task name"
+                    placeholderTextColor={C.faint}
+                    style={[styles.titleInput, attempted && !canSave && styles.titleInputErr]}
+                  />
+                  {attempted && !canSave && <Text style={styles.errHint}>Give your task a name to continue</Text>}
+                </View>
               </View>
-            ))}
-            <Tappable onPress={addSubtask} style={styles.addSub}>
-              <Feather name="plus" size={15} color={C.accentA} />
-              <Text style={styles.addSubTxt}>Add subtask</Text>
-            </Tappable>
 
-            <Text style={styles.section}>NOTES</Text>
-            <TextInput
-              value={d.notes}
-              onChangeText={(notes) => onPatch({ notes })}
-              placeholder="Add notes…"
-              placeholderTextColor={C.faint}
-              multiline
-              style={styles.notes}
-            />
+              {/* Type */}
+              <View style={styles.segment}>
+                {TYPES.map((t) => {
+                  const on = d.type === t.id;
+                  return (
+                    <Tappable key={t.id} onPress={() => onPatch({ type: t.id })} style={[styles.segBtn, on && styles.segBtnOn]}>
+                      <Feather name={t.icon} size={14} color={on ? '#0b0b0d' : C.muted} />
+                      <Text style={[styles.segTxt, { color: on ? '#0b0b0d' : C.textDim }]}>{t.label}</Text>
+                    </Tappable>
+                  );
+                })}
+              </View>
 
+              {/* Schedule */}
+              {d.type !== 'todo' && (
+                <>
+                  <SectionHeader icon="clock" label="SCHEDULE" />
+                  {d.type === 'planned' && (
+                    <>
+                      <View style={styles.timeRow}>
+                        <Tappable style={styles.timeCard} onPress={() => setPicker('start')}>
+                          <Text style={styles.timeLabel}>START</Text>
+                          <Text style={styles.timeVal}>{fmt(d.start, clock)}</Text>
+                        </Tappable>
+                        <Feather name="arrow-right" size={18} color={C.faint} />
+                        <Tappable style={styles.timeCard} onPress={() => setPicker('end')}>
+                          <Text style={styles.timeLabel}>END</Text>
+                          <Text style={styles.timeVal}>{fmt(end, clock)}</Text>
+                        </Tappable>
+                      </View>
+                      <FieldRow icon="watch" label="Duration" value={fmtDur(d.dur)} onPress={() => setPicker('dur')} />
+                    </>
+                  )}
+                  <FieldRow icon="calendar" label="Date" value={dateLabel(d.date)} onPress={() => setPicker('date')} />
+                  <FieldRow icon="repeat" label="Repeat" value={repeatSummary(d.repeat)} onPress={() => setPicker('repeat')} />
+                </>
+              )}
+
+              {/* Organize */}
+              <SectionHeader icon="tag" label="ORGANIZE" />
+              <FieldRow
+                icon="tag"
+                iconColor={selTag ? selTag.color : undefined}
+                label="Tag"
+                value={selTag ? selTag.name : 'None'}
+                valueColor={selTag ? selTag.color : C.faint}
+                onPress={() => setPicker('tag')}
+              />
+              <FieldRow
+                icon="map-pin"
+                label="Place"
+                value={placeName || 'None'}
+                valueColor={placeName ? C.text : C.faint}
+                onPress={() => setPicker('place')}
+              />
+
+              {/* Subtasks */}
+              <SectionHeader icon="check-square" label="SUBTASKS" />
+              {d.subtasks.map((s) => (
+                <View key={s.id} style={styles.subRow}>
+                  <Tappable onPress={() => toggleSub(s.id)} style={[styles.subCheck, s.done && { backgroundColor: d.color, borderColor: d.color }]}>
+                    {s.done && <Feather name="check" size={13} color="#0b0b0d" />}
+                  </Tappable>
+                  <TextInput
+                    value={s.title}
+                    onChangeText={(t) => patchSubtask(s.id, t)}
+                    placeholder="Subtask"
+                    placeholderTextColor={C.faint}
+                    style={[styles.subInput, s.done && styles.subDone]}
+                  />
+                  <Tappable onPress={() => removeSub(s.id)} hitSlop={8} style={styles.subX}>
+                    <Feather name="x" size={15} color={C.faint} />
+                  </Tappable>
+                </View>
+              ))}
+              <Tappable onPress={addSubtask} style={styles.addSub}>
+                <Feather name="plus" size={15} color={C.accentA} />
+                <Text style={styles.addSubTxt}>Add subtask</Text>
+              </Tappable>
+
+              {/* Notes */}
+              <SectionHeader icon="file-text" label="NOTES" />
+              <TextInput
+                value={d.notes}
+                onChangeText={(notes) => onPatch({ notes })}
+                placeholder="Add notes…"
+                placeholderTextColor={C.faint}
+                multiline
+                style={styles.notes}
+              />
+            </ScrollView>
+
+            {/* Footer actions — pinned below the scroll */}
             <View style={styles.actions}>
               {isEditing && (
                 <Tappable onPress={onDelete} style={styles.delete}>
                   <Feather name="trash-2" size={18} color={C.danger} />
                 </Tappable>
               )}
-              <Tappable onPress={onSave} style={styles.saveWrap}>
-                <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.save}>
-                  <Text style={styles.saveTxt}>{isEditing ? 'Save changes' : 'Add task'}</Text>
-                </LinearGradient>
-              </Tappable>
+              {canSave ? (
+                <Tappable onPress={attemptSave} style={[styles.saveWrap, styles.saveShadow]}>
+                  <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.save}>
+                    <Text style={styles.saveTxt}>{isEditing ? 'Save changes' : 'Add task'}</Text>
+                  </LinearGradient>
+                </Tappable>
+              ) : (
+                <Tappable onPress={attemptSave} style={[styles.saveWrap, styles.saveDisabled]}>
+                  <View style={styles.save}>
+                    <Text style={[styles.saveTxt, { color: C.muted }]}>{isEditing ? 'Save changes' : 'Add task'}</Text>
+                  </View>
+                </Tappable>
+              )}
             </View>
-          </ScrollView>
+          </>
         )}
       </BottomSheet>
 
@@ -209,7 +271,7 @@ export function TaskEditorSheet({
                 <Text style={styles.previewTxt}>{d.emoji}</Text>
               </LinearGradient>
             </View>
-            <Text style={styles.section}>COLOR</Text>
+            <Text style={styles.pickerSection}>COLOR</Text>
             <View style={styles.wrapRow}>
               {COLORS.map((c) => (
                 <Tappable
@@ -219,7 +281,7 @@ export function TaskEditorSheet({
                 />
               ))}
             </View>
-            <Text style={styles.section}>ICON</Text>
+            <Text style={styles.pickerSection}>ICON</Text>
             <View style={styles.wrapRow}>
               {EMOJIS.map((ch) => (
                 <Tappable
@@ -237,9 +299,9 @@ export function TaskEditorSheet({
         )}
       </CenterPopup>
 
-      <TimePickerPopup visible={picker === 'start'} title="Start" value={d?.start ?? 0} presets={tPresets} clock={clock} onChange={(v) => onPatch({ start: v })} onClose={() => setPicker(null)} />
-      <TimePickerPopup visible={picker === 'end'} title="End" value={end} presets={tPresets} clock={clock} onChange={(v) => d && onPatch({ dur: Math.max(5, v - d.start) })} onClose={() => setPicker(null)} />
-      <DurationPickerPopup visible={picker === 'dur'} value={d?.dur ?? 30} presets={dPresets} onChange={(v) => onPatch({ dur: v })} onClose={() => setPicker(null)} />
+      <TimePickerPopup visible={picker === 'start'} title="Start time" value={d?.start ?? 0} presets={gTime} tagPresets={tTime} tagName={topTagName} clock={clock} onChange={(v) => onPatch({ start: v })} onClose={() => setPicker(null)} />
+      <TimePickerPopup visible={picker === 'end'} title="End time" value={end} presets={gTime} tagPresets={tTime} tagName={topTagName} clock={clock} onChange={(v) => d && onPatch({ dur: Math.max(5, v - d.start) })} onClose={() => setPicker(null)} />
+      <DurationPickerPopup visible={picker === 'dur'} value={d?.dur ?? 30} presets={gDur} tagPresets={tDur} tagName={topTagName} onChange={(v) => onPatch({ dur: v })} onClose={() => setPicker(null)} />
       <DatePickerPopup visible={picker === 'date'} value={d?.date || todayKey()} weekStart={weekStart} onChange={(key) => onPatch({ date: key })} onClose={() => setPicker(null)} />
       <SelectPopup visible={picker === 'tag'} title="Select tag" options={tagOptions} selectedId={d?.tagId ?? null} emptyText="No tags yet — add some in Settings." onSelect={(id) => onPatch({ tagId: id })} onClose={() => setPicker(null)} />
       <PlaceSelectPopup visible={picker === 'place'} places={places} tags={tags} selectedId={d?.placeId ?? null} taskTagId={d?.tagId ?? null} onSelect={(id) => onPatch({ placeId: id })} onClose={() => setPicker(null)} />
@@ -248,48 +310,97 @@ export function TaskEditorSheet({
   );
 }
 
-function FieldCard({ label, value, onPress, full }: { label: string; value: string; onPress: () => void; full?: boolean }) {
+function SectionHeader({ icon, label }: { icon: keyof typeof Feather.glyphMap; label: string }) {
   return (
-    <Tappable style={[styles.field, full && { marginBottom: 10 }]} onPress={onPress}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <Text style={styles.fieldVal}>{value}</Text>
+    <View style={styles.sectionHead}>
+      <Feather name={icon} size={13} color={C.muted} />
+      <Text style={styles.sectionTxt}>{label}</Text>
+      <View style={styles.sectionLine} />
+    </View>
+  );
+}
+
+function FieldRow({
+  icon,
+  label,
+  value,
+  onPress,
+  valueColor,
+  iconColor,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  value: string;
+  onPress: () => void;
+  valueColor?: string;
+  iconColor?: string;
+}) {
+  return (
+    <Tappable style={styles.row} onPress={onPress}>
+      <View style={styles.rowIcon}>
+        <Feather name={icon} size={15} color={iconColor || C.textDim} />
+      </View>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={[styles.rowValue, { color: valueColor || C.text }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Feather name="chevron-right" size={18} color={C.faint} />
     </Tappable>
   );
 }
 
 const styles = StyleSheet.create({
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  marker: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  markerTxt: { fontSize: 21 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  headerTitle: { fontSize: 19, fontWeight: '700', color: C.text },
+  closeBtn: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
+  marker: { width: 50, height: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  markerTxt: { fontSize: 23 },
   markerEdit: { position: 'absolute', right: -3, bottom: -3, width: 18, height: 18, borderRadius: 9, backgroundColor: C.sheet, alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.15)' },
-  titleInput: { flex: 1, color: C.text, fontSize: 21, fontWeight: '600', padding: 0 },
-  segment: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  segBtn: { flex: 1, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  titleInput: { color: C.text, fontSize: 20, fontWeight: '700', padding: 0, paddingBottom: 4, boxShadow: `inset 0 -1px 0 0 rgba(255,255,255,0.1)` },
+  titleInputErr: { boxShadow: `inset 0 -1.5px 0 0 ${C.danger}` },
+  errHint: { color: C.danger, fontSize: 12, fontWeight: '600', marginTop: 6 },
+
+  segment: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  segBtn: { flex: 1, height: 44, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.05)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   segBtnOn: { backgroundColor: C.accentB },
   segTxt: { fontSize: 13.5, fontWeight: '700' },
-  cardRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  field: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 },
-  fieldLabel: { fontSize: 11, color: C.muted, fontWeight: '600', marginBottom: 5 },
-  fieldVal: { fontSize: 16, fontWeight: '700', color: C.text, fontVariant: ['tabular-nums'] },
-  selCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 },
-  selLabel: { fontSize: 11, color: C.muted, fontWeight: '600', marginBottom: 5 },
-  selVal: { fontSize: 15, fontWeight: '600' },
-  selPlaceRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  section: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 12, marginBottom: 9 },
-  subRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
-  subCheck: { width: 22, height: 22, borderRadius: 7, backgroundColor: 'transparent', boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  subInput: { flex: 1, color: C.text, fontSize: 15, paddingVertical: 6 },
+
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 11 },
+  sectionTxt: { fontSize: 11.5, color: C.muted, fontWeight: '700', letterSpacing: 0.6 },
+  sectionLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginLeft: 4 },
+
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  timeCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
+  timeLabel: { fontSize: 10.5, color: C.muted, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 },
+  timeVal: { fontSize: 20, fontWeight: '800', color: C.text, fontVariant: ['tabular-nums'] },
+
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, marginBottom: 10 },
+  rowIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  rowLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: C.textDim },
+  rowValue: { fontSize: 15, fontWeight: '700', maxWidth: '52%', fontVariant: ['tabular-nums'] },
+
+  subRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 8 },
+  subCheck: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  subInput: { flex: 1, color: C.text, fontSize: 15, paddingVertical: 7, paddingHorizontal: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10 },
   subDone: { color: C.faint, textDecorationLine: 'line-through' },
   subX: { padding: 4 },
-  addSub: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, alignSelf: 'flex-start' },
-  addSubTxt: { fontSize: 14, fontWeight: '600', color: C.accentA },
-  notes: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 14, color: C.text, fontSize: 15, minHeight: 70, textAlignVertical: 'top' },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  delete: { width: 52, height: 52, borderRadius: 16, backgroundColor: 'rgba(248,103,122,0.14)', alignItems: 'center', justifyContent: 'center' },
-  saveWrap: { flex: 1, borderRadius: 16, overflow: 'hidden', boxShadow: `0 8px 24px -8px ${hexA('#7c7cf0', 0.7)}` },
-  save: { height: 52, alignItems: 'center', justifyContent: 'center' },
+  addSub: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, alignSelf: 'flex-start' },
+  addSubTxt: { fontSize: 14, fontWeight: '700', color: C.accentA },
+
+  notes: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 14, color: C.text, fontSize: 15, minHeight: 84, textAlignVertical: 'top' },
+
+  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  delete: { width: 54, height: 54, borderRadius: 16, backgroundColor: 'rgba(248,103,122,0.14)', alignItems: 'center', justifyContent: 'center' },
+  saveWrap: { flex: 1, borderRadius: 16, overflow: 'hidden' },
+  saveShadow: { boxShadow: `0 8px 24px -8px ${hexA('#7c7cf0', 0.7)}` },
+  saveDisabled: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  save: { height: 54, alignItems: 'center', justifyContent: 'center' },
   saveTxt: { fontSize: 16, fontWeight: '700', color: '#0b0b0d' },
+
   pickerTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 14 },
+  pickerSection: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 12, marginBottom: 9 },
   previewRow: { alignItems: 'center', marginBottom: 12 },
   preview: { width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   previewTxt: { fontSize: 28 },

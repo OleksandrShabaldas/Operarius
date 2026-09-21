@@ -20,6 +20,7 @@ type Props = {
   weekStart: 'mon' | 'sun';
   timePresets: Preset[];
   durationPresets: Preset[];
+  autoPickDate?: boolean; // open straight into the date picker (used when copying)
   onPatch: (patch: Partial<Draft>) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -42,6 +43,7 @@ export function TaskEditorSheet({
   weekStart,
   timePresets,
   durationPresets,
+  autoPickDate,
   onPatch,
   onSave,
   onDelete,
@@ -54,9 +56,10 @@ export function TaskEditorSheet({
 
   useEffect(() => {
     if (visible) {
-      setPicker(null);
       setAttempted(false);
+      setPicker(autoPickDate ? 'date' : null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, draft?.id]);
 
   // Keep the last draft during the close animation so content still renders.

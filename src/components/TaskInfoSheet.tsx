@@ -15,6 +15,7 @@ export function TaskInfoSheet({
   places,
   clock,
   onEdit,
+  onCopy,
   onToggleDone,
   onToggleSubtask,
   onClose,
@@ -24,6 +25,7 @@ export function TaskInfoSheet({
   places: Place[];
   clock: Clock;
   onEdit: () => void;
+  onCopy: () => void;
   onToggleDone: () => void;
   onToggleSubtask: (subId: string) => void;
   onClose: () => void;
@@ -62,6 +64,12 @@ export function TaskInfoSheet({
                 <Text style={styles.typeTxt}>{typeLabel}</Text>
               </View>
             </View>
+            <Tappable
+              onPress={onToggleDone}
+              scaleTo={0.86}
+              style={[styles.doneBox, { boxShadow: `inset 0 0 0 2px ${t.done ? t.color : hexA(t.color, 0.5)}`, backgroundColor: t.done ? t.color : 'transparent' }]}>
+              {t.done && <Feather name="check" size={18} color="#0b0b0d" />}
+            </Tappable>
           </View>
 
           {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
@@ -109,9 +117,9 @@ export function TaskInfoSheet({
           )}
 
           <View style={styles.actions}>
-            <Tappable onPress={onToggleDone} style={styles.completeBtn}>
-              <Feather name={t.done ? 'rotate-ccw' : 'check'} size={16} color={C.text} />
-              <Text style={styles.completeTxt}>{t.done ? 'Mark undone' : 'Complete'}</Text>
+            <Tappable onPress={onCopy} style={styles.completeBtn}>
+              <Feather name="copy" size={16} color={C.text} />
+              <Text style={styles.completeTxt}>Copy</Text>
             </Tappable>
             <Tappable onPress={onEdit} style={styles.editWrap}>
               <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edit}>
@@ -146,6 +154,7 @@ function InfoRow({ icon, text }: { icon: keyof typeof Feather.glyphMap; text: st
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
+  doneBox: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   icon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 26 },
   title: { fontSize: 21, fontWeight: '700', color: C.text },

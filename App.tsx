@@ -51,6 +51,7 @@ function Root() {
   const [overlay, setOverlay] = useState<'stats' | 'settings' | null>(null);
   const [selectedKey, setSelectedKey] = useState<string>(todayKey());
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [autoDate, setAutoDate] = useState(false); // open the editor straight into the date picker (copy flow)
   const [viewId, setViewId] = useState<string | null>(null);
 
   const [update, setUpdate] = useState<ReleaseInfo | null>(null);
@@ -104,6 +105,7 @@ function Root() {
 
   const openNew = useCallback(
     (opts?: { startMin?: number; type?: TaskType }) => {
+      setAutoDate(false);
       const type: TaskType = opts?.type ?? (tab === 'todo' ? 'todo' : 'planned');
       const dayPlanned = tasksForDay(selectedKey).filter((t) => t.type === 'planned');
       const after = dayPlanned.reduce((m, t) => Math.max(m, t.start + t.dur), settings.dayStart);
@@ -129,9 +131,24 @@ function Root() {
   );
 
   const editFromInfo = useCallback(() => {
+    setAutoDate(false);
     setViewId((id) => {
       const base = id ? tasks.find((x) => x.id === parseId(id).baseId) : null;
       if (base) setDraft({ ...base }); // editing a repeating task edits the whole series
+      return null;
+    });
+  }, [tasks]);
+
+  // Copy an existing task into a fresh draft (no id → new task) and jump the
+  // editor straight to the date picker so you choose the new day right away.
+  const copyFromInfo = useCallback(() => {
+    setViewId((id) => {
+      const base = id ? tasks.find((x) => x.id === parseId(id).baseId) : null;
+      if (base) {
+        const { id: _id, done: _done, doneDates: _dd, ...rest } = base;
+        setDraft({ ...rest, done: false, doneDates: [], subtasks: base.subtasks.map((s) => ({ ...s, done: false })) });
+        setAutoDate(true);
+      }
       return null;
     });
   }, [tasks]);
@@ -205,6 +222,7 @@ function Root() {
         places={settings.places}
         clock={settings.clock}
         onEdit={editFromInfo}
+        onCopy={copyFromInfo}
         onToggleDone={() => viewTask && toggleDone(viewTask.id)}
         onToggleSubtask={(subId) => viewTask && toggleSubtask(viewTask.id, subId)}
         onClose={() => setViewId(null)}
@@ -218,6 +236,7 @@ function Root() {
         weekStart={settings.weekStart}
         timePresets={settings.timePresets}
         durationPresets={settings.durationPresets}
+        autoPickDate={autoDate}
         onPatch={patch}
         onSave={save}
         onDelete={del}

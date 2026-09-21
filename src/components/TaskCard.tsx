@@ -17,7 +17,10 @@ import { C, PX } from '../theme';
 import { fmt, fmtDur, findTag, hexA, placeLabel } from '../utils';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
+import { Hatch } from './Hatch';
 import { stagger, Tappable } from './anim';
+
+export type DayState = 'past' | 'today' | 'future';
 
 type Props = {
   task: Task;
@@ -28,6 +31,7 @@ type Props = {
   pos: Pos;
   isDragging: boolean;
   nowMin: number | null; // null when the viewed day is not today
+  dayState: DayState;
   dayStart: number;
   dayEnd: number;
   liveStart: number;
@@ -137,18 +141,22 @@ function TaskCardBase(props: Props) {
   const end = s + task.dur;
 
   // Visual state:
-  //  • done            → fully grayscale (a touch darker once it's in the past)
-  //  • in-progress     → the elapsed portion grayscales (progress)
-  //  • past + not done → "Missed" (kept in color, red badge)
-  const past = nowMin != null && end <= nowMin;
-  const inProgress = nowMin != null && s < nowMin && nowMin < end;
+  //  • whole day in the past → fully grayscale (history), "Missed" if not done
+  //  • done                  → fully grayscale (a touch darker once it's past)
+  //  • in-progress           → the elapsed portion grayscales (progress)
+  //  • past + not done       → "Missed" (elapsed grayscale, red corner badge)
+  const isPastDay = props.dayState === 'past';
+  const isFutureDay = props.dayState === 'future';
+  const past = isPastDay || (nowMin != null && end <= nowMin);
+  const inProgress = !isPastDay && !isFutureDay && nowMin != null && s < nowMin && nowMin < end;
   const missed = !task.done && past;
+  const hasNote = !!task.notes.trim();
   let oh = 0;
   if (!isDragging) {
-    if (task.done) oh = pos.h;
+    if (task.done || isPastDay) oh = pos.h;
     else if (inProgress) oh = Math.round(((nowMin! - s) / task.dur) * pos.h);
   }
-  const dimAlpha = task.done ? (past ? 0.46 : 0.2) : 0.32;
+  const dimAlpha = task.done ? (past ? 0.46 : 0.2) : isPastDay ? 0.42 : 0.32;
 
   const cardShadow = `inset 0 0 0 1px ${hexA(color, isDragging ? 0.45 : 0.16)}, 0 0 24px -6px ${hexA(color, isDragging ? 0.65 : 0.3)}${isDragging ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : ''}`;
 
@@ -177,9 +185,18 @@ function TaskCardBase(props: Props) {
           </>
         )}
 
+        {hasNote && (
+          <View pointerEvents="none" style={styles.noteBadge}>
+            <Feather name="file-text" size={10} color={C.muted} />
+          </View>
+        )}
+
         {missed && (
-          <View pointerEvents="none" style={styles.missed}>
-            <Text style={styles.missedTxt}>Missed</Text>
+          <View pointerEvents="none" style={styles.missedWrap}>
+            <Hatch color={C.now} opacity={0.06} radius={0} style={StyleSheet.absoluteFill} />
+            <View style={styles.missedBadge}>
+              <Text style={styles.missedTxt}>Missed</Text>
+            </View>
           </View>
         )}
       </Animated.View>
@@ -206,8 +223,12 @@ const styles = StyleSheet.create({
   // this region (the elapsed part of the card); the dim adds the "past" fade.
   desat: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#808080', mixBlendMode: 'saturation' },
   dim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(11,11,13,0.32)' },
-  missed: { position: 'absolute', top: 8, right: 44, backgroundColor: 'rgba(255,90,95,0.16)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  // "Missed": flush in the top-right corner, sitting over a heavily-faded red
+  // warning hatch that blends into the card corner.
+  missedWrap: { position: 'absolute', top: 0, right: 0, width: 96, height: 40, alignItems: 'flex-end', overflow: 'hidden', borderBottomLeftRadius: 18, borderTopRightRadius: 16 },
+  missedBadge: { marginTop: 7, marginRight: 8, backgroundColor: 'rgba(255,90,95,0.18)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, boxShadow: 'inset 0 0 0 1px rgba(255,90,95,0.3)' },
   missedTxt: { fontSize: 9.5, fontWeight: '800', color: '#ff5a5f', letterSpacing: 0.4 },
+  noteBadge: { position: 'absolute', top: 6, left: 6, width: 18, height: 18, borderRadius: 6, backgroundColor: 'rgba(20,21,24,0.82)', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.1)' },
   grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },
   icon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 20 },

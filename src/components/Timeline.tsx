@@ -5,7 +5,7 @@ import { C, TOPBAND } from '../theme';
 import { fmt } from '../utils';
 import { computeDayLayout } from '../layout';
 import { Hatch } from './Hatch';
-import { TaskCard } from './TaskCard';
+import { TaskCard, DayState } from './TaskCard';
 
 type Props = {
   tasks: Task[];
@@ -17,6 +17,7 @@ type Props = {
   gapThreshold: number;
   viewportH: number; // ScrollView height, so the end-of-day band can reach the screen bottom
   nowMin: number | null; // null when the viewed day is not today
+  dayState: DayState;
   dragId: string | null;
   dragMin: number;
   onDragStart: (id: string) => void;
@@ -64,7 +65,7 @@ function HourTicks({
 }
 
 export function Timeline(props: Props) {
-  const { tasks, tags, places, clock, dayStart, dayEnd, gapThreshold, viewportH, nowMin, dragId, dragMin } = props;
+  const { tasks, tags, places, clock, dayStart, dayEnd, gapThreshold, viewportH, nowMin, dayState, dragId, dragMin } = props;
   const { sorted, pos, freeblocks, chips, botTop, H, yAt } = computeDayLayout(
     tasks,
     dayStart,
@@ -140,6 +141,7 @@ export function Timeline(props: Props) {
           isDragging={dragId === t.id}
           liveStart={dragId === t.id ? dragMin : t.start}
           nowMin={nowMin}
+          dayState={dayState}
           dayStart={dayStart}
           dayEnd={dayEnd}
           onDragStart={props.onDragStart}

@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleProp, StyleSheet, useWindowDimensions, View, ViewStyle } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
+  Extrapolation,
   FadeIn,
   FadeOut,
+  interpolate,
   runOnJS,
-  SlideInDown,
-  SlideOutDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
   ZoomIn,
   ZoomOut,
 } from 'react-native-reanimated';
@@ -15,8 +20,9 @@ import { C } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Bottom sheet with springy slide-in AND slide-out. The Modal stays mounted
-// until the exit animation finishes, so closing feels smooth instead of a cut.
+// Bottom sheet with a spring open/close driven by one shared value, so it can
+// be dragged down by its handle to dismiss. Extends under the nav bar
+// (navigationBarTranslucent) so there is never a gap at the screen bottom.
 export function BottomSheet({
   open,
   onClose,
@@ -33,43 +39,68 @@ export function BottomSheet({
   contentStyle?: StyleProp<ViewStyle>;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const [mounted, setMounted] = useState(open);
+  const ty = useSharedValue(winH);
+
   useEffect(() => {
     if (open) {
       setMounted(true);
-      return;
+      ty.value = withSpring(0, { damping: 24, stiffness: 240, mass: 0.9 });
+    } else {
+      ty.value = withTiming(winH, { duration: 250, easing: Easing.in(Easing.cubic) }, (f) => {
+        'worklet';
+        if (f) runOnJS(setMounted)(false);
+      });
     }
-    // Safety net: unmount after the exit even if the animation callback misfires.
-    const t = setTimeout(() => setMounted(false), 400);
-    return () => clearTimeout(t);
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, winH]);
+
+  const drag = Gesture.Pan()
+    .onUpdate((e) => {
+      'worklet';
+      ty.value = Math.max(0, e.translationY);
+    })
+    .onEnd((e) => {
+      'worklet';
+      if (e.translationY > 120 || e.velocityY > 900) {
+        runOnJS(onClose)();
+      } else {
+        ty.value = withSpring(0, { damping: 24, stiffness: 260 });
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: ty.value }] }));
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: interpolate(ty.value, [0, winH], [1, 0], Extrapolation.CLAMP) }));
+
   if (!mounted) return <Modal visible={false} transparent />;
 
-  const inner = open ? (
-    <>
-      <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(200)} exiting={FadeOut.duration(220)} onPress={onClose} />
+  const body = (
+    <View style={styles.fillEnd} pointerEvents="box-none">
+      <AnimatedPressable style={[styles.backdrop, backdropStyle]} onPress={onClose} />
       <Animated.View
-        entering={SlideInDown.duration(340).easing(Easing.out(Easing.cubic))}
-        exiting={SlideOutDown.duration(260).withCallback((f) => {
-          'worklet';
-          if (f) runOnJS(setMounted)(false);
-        })}
-        style={[styles.sheet, { paddingBottom: insets.bottom + 24 }, height != null ? { height } : null, contentStyle]}>
-        <View style={styles.handle} />
+        style={[styles.sheet, { paddingBottom: insets.bottom + 24 }, height != null ? { height } : null, contentStyle, sheetStyle]}>
+        <GestureDetector gesture={drag}>
+          <View style={styles.handleZone}>
+            <View style={styles.handle} />
+          </View>
+        </GestureDetector>
         {children}
       </Animated.View>
-    </>
-  ) : null;
+    </View>
+  );
 
   return (
-    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={onClose}>
-      {avoidKeyboard ? (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fillEnd}>
-          {inner}
-        </KeyboardAvoidingView>
-      ) : (
-        <View style={styles.fillEnd}>{inner}</View>
-      )}
+    <Modal visible transparent statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={onClose}>
+      <GestureHandlerRootView style={styles.flex}>
+        {avoidKeyboard ? (
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+            {body}
+          </KeyboardAvoidingView>
+        ) : (
+          body
+        )}
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -98,28 +129,31 @@ export function CenterPopup({
   if (!mounted) return <Modal visible={false} transparent />;
 
   return (
-    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fillCenter}>
-        {open ? (
-          <>
-            <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(160)} exiting={FadeOut.duration(180)} onPress={onClose} />
-            <Animated.View
-              entering={ZoomIn.duration(220).easing(Easing.out(Easing.cubic))}
-              exiting={ZoomOut.duration(170).withCallback((f) => {
-                'worklet';
-                if (f) runOnJS(setMounted)(false);
-              })}
-              style={[styles.card, cardStyle]}>
-              {children}
-            </Animated.View>
-          </>
-        ) : null}
-      </KeyboardAvoidingView>
+    <Modal visible transparent statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={onClose}>
+      <GestureHandlerRootView style={styles.flex}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fillCenter}>
+          {open ? (
+            <>
+              <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(160)} exiting={FadeOut.duration(180)} onPress={onClose} />
+              <Animated.View
+                entering={ZoomIn.duration(220).easing(Easing.out(Easing.cubic))}
+                exiting={ZoomOut.duration(170).withCallback((f) => {
+                  'worklet';
+                  if (f) runOnJS(setMounted)(false);
+                })}
+                style={[styles.card, cardStyle]}>
+                {children}
+              </Animated.View>
+            </>
+          ) : null}
+        </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   fillEnd: { flex: 1, justifyContent: 'flex-end' },
   fillCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 26 },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
@@ -128,11 +162,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 22,
-    paddingTop: 12,
+    paddingTop: 6,
     paddingBottom: 30,
     boxShadow: '0 -20px 60px -20px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.06)',
   },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.16)', alignSelf: 'center', marginBottom: 16 },
+  handleZone: { alignSelf: 'stretch', alignItems: 'center', paddingTop: 8, paddingBottom: 14 },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.18)' },
   card: {
     width: '100%',
     maxWidth: 360,

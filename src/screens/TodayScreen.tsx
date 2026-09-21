@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +12,7 @@ import { addDays, headerParts, hexA, todayKey, weekOf } from '../utils';
 import { occursOn } from '../recurrence';
 import { WeekStrip } from '../components/WeekStrip';
 import { Timeline } from '../components/Timeline';
+import { DayState } from '../components/TaskCard';
 import { Tappable } from '../components/anim';
 
 type Props = {
@@ -46,7 +49,27 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   const planned = dayTasks.filter((t) => t.type === 'planned');
   const allday = dayTasks.filter((t) => t.type === 'allday');
   const { dayNum, weekday, month } = headerParts(selectedKey);
-  const isToday = selectedKey === todayKey();
+  const today = todayKey();
+  const isToday = selectedKey === today;
+  const dayState: DayState = selectedKey < today ? 'past' : selectedKey > today ? 'future' : 'today';
+
+  // Swipe the timeline left/right to move a day, with a directional slide.
+  const { width: winW } = useWindowDimensions();
+  const slideX = useSharedValue(0);
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slideX.value }] }));
+  const changeDay = (delta: number) => {
+    setSelectedKey(addDays(selectedKey, delta));
+    slideX.value = delta > 0 ? winW * 0.5 : -winW * 0.5;
+    slideX.value = withSpring(0, { damping: 22, stiffness: 200, mass: 0.7 });
+  };
+  const daySwipe = Gesture.Pan()
+    .activeOffsetX([-24, 24])
+    .failOffsetY([-18, 18])
+    .onEnd((e) => {
+      'worklet';
+      if (e.translationX > 60 || e.velocityX > 650) runOnJS(changeDay)(-1);
+      else if (e.translationX < -60 || e.velocityX < -650) runOnJS(changeDay)(1);
+    });
   // Dots under the visible week — honours recurrence, so a day whose only task
   // is a repeat occurrence still gets marked.
   const visibleWeek = useMemo(() => weekOf(selectedKey, settings.weekStart), [selectedKey, settings.weekStart]);
@@ -117,6 +140,8 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
         />
       </View>
 
+      <GestureDetector gesture={daySwipe}>
+        <Animated.View style={[styles.slide, slideStyle]}>
       {/* All-day tasks (shown only when the day has any) */}
       {allday.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.alldayScroll} contentContainerStyle={styles.alldayRow}>
@@ -151,6 +176,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           gapThreshold={settings.gapThreshold}
           viewportH={viewportH}
           nowMin={isToday ? nowMin : null}
+          dayState={dayState}
           dragId={drag?.id ?? null}
           dragMin={drag?.min ?? 0}
           onDragStart={onDragStart}
@@ -161,12 +187,15 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           onAddAt={(startMin) => onNewTask({ startMin, type: 'planned' })}
         />
       </ScrollView>
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  slide: { flex: 1 },
   header: { paddingHorizontal: 22, paddingBottom: 8 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   dateRow: { flexDirection: 'row', alignItems: 'baseline', gap: 9 },

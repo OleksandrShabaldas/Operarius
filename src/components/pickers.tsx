@@ -10,11 +10,10 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { C, MONTHS } from '../theme';
 import { Clock } from '../types';
-import { dateFromKey, dateKey, fmt, fmtDur, hexA, weekdayLetters } from '../utils';
+import { dateFromKey, dateKey, fmt, fmtDur, todayKey, weekdayLetters } from '../utils';
 import { CenterPopup as Popup } from './Overlay';
 import { Tappable } from './anim';
 
@@ -118,8 +117,6 @@ function Wheel({
           <WheelItem key={i} i={i} scrollY={scrollY} label={format(v)} />
         ))}
       </Animated.ScrollView>
-      <LinearGradient pointerEvents="none" colors={[C.sheet, hexA(C.sheet, 0)]} style={[styles.fade, { top: 0 }]} />
-      <LinearGradient pointerEvents="none" colors={[hexA(C.sheet, 0), C.sheet]} style={[styles.fade, { bottom: 0 }]} />
     </View>
   );
 }
@@ -391,6 +388,7 @@ export function MonthCalendar({
     setView({ y, m });
   };
 
+  const tKey = todayKey();
   return (
     <>
       <View style={styles.calHead}>
@@ -400,9 +398,14 @@ export function MonthCalendar({
         <Text style={styles.calMonth}>
           {MONTHS[view.m]} {view.y}
         </Text>
-        <Tappable onPress={() => shift(1)} hitSlop={10} style={styles.calArrow}>
-          <Text style={styles.calArrowTxt}>›</Text>
-        </Tappable>
+        <View style={styles.calHeadRight}>
+          <Tappable onPress={() => onChange(tKey)} style={styles.todayBtn}>
+            <Text style={styles.todayBtnTxt}>Today</Text>
+          </Tappable>
+          <Tappable onPress={() => shift(1)} hitSlop={10} style={styles.calArrow}>
+            <Text style={styles.calArrowTxt}>›</Text>
+          </Tappable>
+        </View>
       </View>
       <View style={styles.calRow}>
         {weekdayLetters(weekStart).map((l, i) => (
@@ -416,10 +419,11 @@ export function MonthCalendar({
           if (d == null) return <View key={i} style={styles.calCell} />;
           const key = dateKey(new Date(view.y, view.m, d));
           const on = key === value;
+          const isToday = key === tKey;
           return (
             <Tappable key={i} style={styles.calCell} onPress={() => onChange(key)}>
-              <View style={[styles.calDay, on && styles.calDayOn]}>
-                <Text style={[styles.calDayTxt, on && styles.calDayTxtOn]}>{d}</Text>
+              <View style={[styles.calDay, on && styles.calDayOn, !on && isToday && styles.calDayToday]}>
+                <Text style={[styles.calDayTxt, on && styles.calDayTxtOn, !on && isToday && styles.calDayTodayTxt]}>{d}</Text>
               </View>
             </Tappable>
           );
@@ -470,17 +474,16 @@ const styles = StyleSheet.create({
   },
   wheelBand: {
     position: 'absolute',
-    left: 14,
-    right: 14,
-    top: PAD,
-    height: ITEM_H,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06)',
+    left: 10,
+    right: 10,
+    top: PAD - 1,
+    height: ITEM_H + 2,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08), 0 2px 10px -4px rgba(0,0,0,0.5)',
   },
   wheel: { height: WHEEL_H, overflow: 'hidden' },
   wheelTxt: { height: ITEM_H, lineHeight: ITEM_H, textAlign: 'center', fontSize: 23, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  fade: { position: 'absolute', left: 0, right: 0, height: ITEM_H * 1.9 },
   colon: { fontSize: 23, fontWeight: '800', color: C.text, marginHorizontal: 1 },
   unit: { fontSize: 15, fontWeight: '700', color: C.muted, marginHorizontal: 2 },
 
@@ -505,15 +508,20 @@ const styles = StyleSheet.create({
 
   // Calendar
   calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  calHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   calArrow: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
   calArrowTxt: { fontSize: 22, color: C.textDim, marginTop: -2 },
   calMonth: { fontSize: 15, fontWeight: '700', color: C.text },
+  todayBtn: { paddingHorizontal: 12, height: 34, borderRadius: 10, backgroundColor: 'rgba(79,209,197,0.14)', alignItems: 'center', justifyContent: 'center' },
+  todayBtnTxt: { fontSize: 12.5, fontWeight: '700', color: C.accentB },
   calRow: { flexDirection: 'row' },
   calDow: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '600', color: C.muted, marginBottom: 4 },
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
   calDay: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   calDayOn: { backgroundColor: C.accentB },
+  calDayToday: { boxShadow: `inset 0 0 0 1.5px ${C.accentB}` },
   calDayTxt: { fontSize: 14, fontWeight: '600', color: C.text },
   calDayTxtOn: { color: '#0b0b0d', fontWeight: '700' },
+  calDayTodayTxt: { color: C.accentB, fontWeight: '700' },
 });

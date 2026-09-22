@@ -10,6 +10,7 @@ import { fmt, fmtDur } from '../utils';
 import { TextPromptModal } from '../components/TextPromptModal';
 import { PlaceIcon } from '../components/PlaceIcon';
 import { PlaceEditorPopup } from '../components/PlaceEditorPopup';
+import { CustomColorGrid, CustomIconInput } from '../components/ColorIcon';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
 import { CenterPopup } from '../components/Overlay';
 import { Tappable } from '../components/anim';
@@ -55,6 +56,10 @@ export function SettingsScreen({
   const [placeTab, setPlaceTab] = useState<string | null>(null); // null = Untagged
   const [presetTab, setPresetTab] = useState<string | null>(null); // null = Global
   const [placeEdit, setPlaceEdit] = useState<string | null>(null);
+  const [colorAdd, setColorAdd] = useState(false);
+  const [iconAdd, setIconAdd] = useState(false);
+  const [tempColor, setTempColor] = useState('#7c7cf0');
+  const [tempIcon, setTempIcon] = useState('');
 
   // Back inside a category returns to the category list (App closes the screen).
   useEffect(() => {
@@ -127,6 +132,16 @@ export function SettingsScreen({
                 </Pressable>
               ))}
             </View>
+            <Text style={styles.section}>WHEN DRAGGING A TASK ONTO ANOTHER</Text>
+            <View style={styles.segment}>
+              <Pressable onPress={() => updateSettings({ swapOnDrag: false })} style={[styles.segBtn, !settings.swapOnDrag && styles.segBtnOn]}>
+                <Text style={[styles.segTxt, { color: !settings.swapOnDrag ? '#0b0b0d' : C.textDim }]}>Overlap</Text>
+              </Pressable>
+              <Pressable onPress={() => updateSettings({ swapOnDrag: true })} style={[styles.segBtn, settings.swapOnDrag && styles.segBtnOn]}>
+                <Text style={[styles.segTxt, { color: settings.swapOnDrag ? '#0b0b0d' : C.textDim }]}>Push apart</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.hint}>Overlap lets two tasks share a time slot (shown with a warning). Push apart keeps them stacked.</Text>
           </View>
         )}
 
@@ -139,6 +154,40 @@ export function SettingsScreen({
                   <Text style={[styles.segTxt, { color: settings.clock === f ? '#0b0b0d' : C.textDim }]}>{f === '12h' ? '12-hour' : '24-hour'}</Text>
                 </Pressable>
               ))}
+            </View>
+
+            <Text style={styles.section}>TASK COLORS</Text>
+            <View style={styles.paletteWrap}>
+              {settings.colors.map((c) => (
+                <View key={c} style={styles.paletteItem}>
+                  <View style={[styles.paletteSwatch, { backgroundColor: c }]} />
+                  {settings.colors.length > 1 && (
+                    <Pressable hitSlop={6} style={styles.paletteX} onPress={() => updateSettings({ colors: settings.colors.filter((x) => x !== c) })}>
+                      <Feather name="x" size={10} color={C.text} />
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+              <Pressable style={styles.paletteAdd} onPress={() => { setTempColor('#7C7CF0'); setColorAdd(true); }}>
+                <Feather name="plus" size={16} color={C.accentA} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.section}>TASK ICONS</Text>
+            <View style={styles.paletteWrap}>
+              {settings.emojis.map((e) => (
+                <View key={e} style={styles.iconItem}>
+                  <Text style={styles.iconItemTxt}>{e}</Text>
+                  {settings.emojis.length > 1 && (
+                    <Pressable hitSlop={6} style={styles.paletteX} onPress={() => updateSettings({ emojis: settings.emojis.filter((x) => x !== e) })}>
+                      <Feather name="x" size={10} color={C.text} />
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+              <Pressable style={styles.paletteAdd} onPress={() => { setTempIcon(''); setIconAdd(true); }}>
+                <Feather name="plus" size={16} color={C.accentA} />
+              </Pressable>
             </View>
           </View>
         )}
@@ -355,6 +404,33 @@ export function SettingsScreen({
         onClose={() => setPlaceEdit(null)}
       />
 
+      <CenterPopup open={colorAdd} onClose={() => setColorAdd(false)}>
+        <Text style={styles.colorTitle}>New color</Text>
+        <CustomColorGrid value={tempColor} onPick={setTempColor} />
+        <Pressable
+          style={styles.addBtn}
+          onPress={() => {
+            if (!settings.colors.includes(tempColor)) updateSettings({ colors: [...settings.colors, tempColor] });
+            setColorAdd(false);
+          }}>
+          <Text style={styles.addBtnTxt}>Add color</Text>
+        </Pressable>
+      </CenterPopup>
+
+      <CenterPopup open={iconAdd} onClose={() => setIconAdd(false)}>
+        <Text style={styles.colorTitle}>New icon</Text>
+        <CustomIconInput value={tempIcon} onChange={setTempIcon} />
+        <Pressable
+          style={[styles.addBtn, { marginTop: 16 }]}
+          onPress={() => {
+            const v = tempIcon.trim();
+            if (v && !settings.emojis.includes(v)) updateSettings({ emojis: [...settings.emojis, v] });
+            setIconAdd(false);
+          }}>
+          <Text style={styles.addBtnTxt}>Add icon</Text>
+        </Pressable>
+      </CenterPopup>
+
       <CenterPopup open={colorPick != null} onClose={() => setColorPick(null)}>
         <Text style={styles.colorTitle}>Tag color</Text>
         <View style={styles.colorWrap}>
@@ -404,6 +480,7 @@ const styles = StyleSheet.create({
   catLabel: { fontSize: 16, fontWeight: '700', color: C.text },
   catSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
   section: { fontSize: 11, color: C.muted, fontWeight: '700', marginBottom: 9, marginTop: 16, letterSpacing: 0.3 },
+  hint: { fontSize: 12, color: C.muted, lineHeight: 17, marginTop: 10 },
   stepRow: { flexDirection: 'row', gap: 10 },
   stepCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingVertical: 11, paddingHorizontal: 14 },
   stepLabel: { fontSize: 11, color: C.muted, fontWeight: '600', marginBottom: 4 },
@@ -443,6 +520,13 @@ const styles = StyleSheet.create({
   placeMeta: { fontSize: 12, color: C.muted, flex: 1 },
   emptyHint: { color: C.faint, fontSize: 13, paddingVertical: 14, textAlign: 'center' },
   presetNote: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 16 },
+  paletteWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
+  paletteItem: { position: 'relative' },
+  paletteSwatch: { width: 38, height: 38, borderRadius: 19 },
+  iconItem: { position: 'relative', width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  iconItemTxt: { fontSize: 20 },
+  paletteX: { position: 'absolute', top: -4, right: -4, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(30,31,35,0.95)', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.15)' },
+  paletteAdd: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(124,124,240,0.12)', alignItems: 'center', justifyContent: 'center' },
   presetWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   presetChip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
   presetTxt: { fontSize: 13, fontWeight: '600', color: C.textDim, fontVariant: ['tabular-nums'] },

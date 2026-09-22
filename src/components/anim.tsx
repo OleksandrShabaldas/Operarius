@@ -58,12 +58,12 @@ export function Tappable({
 
 // Staggered entrance for a list item at `index` — each element animates in
 // separately for a premium, cascading feel.
-export function stagger(index: number, base = 40, step = 45) {
+export function stagger(index: number, base = 24, step = 26) {
   return FadeInDown.springify()
-    .damping(18)
-    .stiffness(160)
+    .damping(19)
+    .stiffness(210)
     .delay(base + index * step)
-    .withInitialValues({ transform: [{ translateY: 14 }], opacity: 0 });
+    .withInitialValues({ transform: [{ translateY: 11 }], opacity: 0 });
 }
 
 export const EASE_OUT = Easing.out(Easing.cubic);

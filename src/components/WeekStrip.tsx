@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { WeekStart } from '../types';
@@ -20,6 +20,21 @@ export function WeekStrip({ selectedKey, weekStart, daysWithTasks, onSelect, onP
   const letters = weekdayLetters(weekStart);
   const today = todayKey();
 
+  // Slide the whole strip when the visible week changes (instead of jumping).
+  const weekKey = week[0];
+  const prevWeek = useRef(weekKey);
+  const wx = useSharedValue(0);
+  const wStyle = useAnimatedStyle(() => ({ transform: [{ translateX: wx.value }] }));
+  useEffect(() => {
+    if (weekKey !== prevWeek.current) {
+      const d = weekKey > prevWeek.current ? 1 : -1;
+      prevWeek.current = weekKey;
+      wx.value = d * 320;
+      wx.value = withSpring(0, { damping: 20, stiffness: 190, mass: 0.7 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekKey]);
+
   const swipe = Gesture.Pan()
     .activeOffsetX([-12, 12])
     .failOffsetY([-14, 14])
@@ -31,7 +46,7 @@ export function WeekStrip({ selectedKey, weekStart, daysWithTasks, onSelect, onP
 
   return (
     <GestureDetector gesture={swipe}>
-      <View style={styles.row}>
+      <Animated.View style={[styles.row, wStyle]}>
         {week.map((key, i) => {
           const selected = key === selectedKey;
           const isToday = key === today;
@@ -69,7 +84,7 @@ export function WeekStrip({ selectedKey, weekStart, daysWithTasks, onSelect, onP
             </Pressable>
           );
         })}
-      </View>
+      </Animated.View>
     </GestureDetector>
   );
 }

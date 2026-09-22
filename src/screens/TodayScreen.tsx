@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,7 +41,7 @@ function useNowMinute(): number {
 
 export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSettings, onNewTask, onOpenInfo }: Props) {
   const insets = useSafeAreaInsets();
-  const { tasks, settings, tasksForDay, toggleDone, moveTask } = useApp();
+  const { tasks, settings, tasksForDay, toggleDone, toggleSubtask, toggleExpanded, moveTask } = useApp();
   const nowMin = useNowMinute();
   const [viewportH, setViewportH] = useState(560);
 
@@ -53,22 +53,34 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   const isToday = selectedKey === today;
   const dayState: DayState = selectedKey < today ? 'past' : selectedKey > today ? 'future' : 'today';
 
-  // Swipe the timeline left/right to move a day, with a directional slide.
+  // Any day change (swipe, week-strip tap, week page) slides the content in the
+  // travel direction and rolls the header date. Direction is derived in render
+  // so the keyed header entrance uses the right direction on its mount frame.
   const { width: winW } = useWindowDimensions();
   const slideX = useSharedValue(0);
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slideX.value }] }));
-  const changeDay = (delta: number) => {
-    setSelectedKey(addDays(selectedKey, delta));
-    slideX.value = delta > 0 ? winW * 0.5 : -winW * 0.5;
-    slideX.value = withSpring(0, { damping: 22, stiffness: 200, mass: 0.7 });
-  };
+  const prevKeyRef = useRef(selectedKey);
+  const dirRef = useRef(1);
+  if (selectedKey !== prevKeyRef.current) {
+    dirRef.current = selectedKey > prevKeyRef.current ? 1 : -1;
+  }
+  const dir = dirRef.current;
+  useEffect(() => {
+    if (selectedKey !== prevKeyRef.current) {
+      prevKeyRef.current = selectedKey;
+      slideX.value = dir * winW * 0.5;
+      slideX.value = withSpring(0, { damping: 20, stiffness: 200, mass: 0.7 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey]);
+  const changeDay = (delta: number) => setSelectedKey(addDays(selectedKey, delta));
   const daySwipe = Gesture.Pan()
     .activeOffsetX([-24, 24])
     .failOffsetY([-18, 18])
     .onEnd((e) => {
       'worklet';
-      if (e.translationX > 60 || e.velocityX > 650) runOnJS(changeDay)(-1);
-      else if (e.translationX < -60 || e.velocityX < -650) runOnJS(changeDay)(1);
+      if (e.translationX > 55 || e.velocityX > 600) runOnJS(changeDay)(-1);
+      else if (e.translationX < -55 || e.velocityX < -600) runOnJS(changeDay)(1);
     });
   // Dots under the visible week — honours recurrence, so a day whose only task
   // is a repeat occurrence still gets marked.
@@ -116,11 +128,11 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerRow}>
-          <View style={styles.dateRow}>
+          <Animated.View key={selectedKey} entering={(dir > 0 ? FadeInDown : FadeInUp).duration(280).springify().damping(20)} style={styles.dateRow}>
             <Text style={styles.dayNum}>{dayNum}</Text>
             <Text style={styles.weekday}>{weekday}</Text>
             <Text style={styles.month}>{month}</Text>
-          </View>
+          </Animated.View>
           <View style={styles.headBtns}>
             <Tappable style={styles.headBtn} onPress={onOpenStats} hitSlop={6}>
               <Feather name="bar-chart-2" size={17} color={C.textDim} />
@@ -177,6 +189,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           viewportH={viewportH}
           nowMin={isToday ? nowMin : null}
           dayState={dayState}
+          allowOverlap={!settings.swapOnDrag}
           dragId={drag?.id ?? null}
           dragMin={drag?.min ?? 0}
           onDragStart={onDragStart}
@@ -184,6 +197,8 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           onDragEnd={onDragEnd}
           onOpen={onOpenInfo}
           onToggle={toggleDone}
+          onToggleSubtask={toggleSubtask}
+          onToggleExpanded={toggleExpanded}
           onAddAt={(startMin) => onNewTask({ startMin, type: 'planned' })}
         />
       </ScrollView>

@@ -60,7 +60,7 @@ export function RepeatPopup({
   return (
     <BottomSheet open={visible} onClose={onClose}>
       {page === 'main' ? (
-        <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+        <ScrollView showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
           <Text style={styles.title}>Repeat</Text>
 
           {OPTIONS.map((o, i) => {

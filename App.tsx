@@ -125,33 +125,35 @@ function Root() {
         subtasks: [],
         repeat: null,
         doneDates: [],
+        expanded: false,
       });
     },
     [tab, selectedKey, settings.dayStart, settings.dayEnd, tasksForDay]
   );
 
+  // Close the info sheet first, then open the editor a beat later, so the two
+  // bottom-sheet modals never transition at the same time (which on Android can
+  // drop the touch and leave nothing open).
   const editFromInfo = useCallback(() => {
+    if (!viewId) return;
+    const base = tasks.find((x) => x.id === parseId(viewId).baseId);
     setAutoDate(false);
-    setViewId((id) => {
-      const base = id ? tasks.find((x) => x.id === parseId(id).baseId) : null;
-      if (base) setDraft({ ...base }); // editing a repeating task edits the whole series
-      return null;
-    });
-  }, [tasks]);
+    setViewId(null);
+    if (base) setTimeout(() => setDraft({ ...base }), 230); // editing a repeat edits the series
+  }, [viewId, tasks]);
 
   // Copy an existing task into a fresh draft (no id → new task) and jump the
   // editor straight to the date picker so you choose the new day right away.
   const copyFromInfo = useCallback(() => {
-    setViewId((id) => {
-      const base = id ? tasks.find((x) => x.id === parseId(id).baseId) : null;
-      if (base) {
-        const { id: _id, done: _done, doneDates: _dd, ...rest } = base;
-        setDraft({ ...rest, done: false, doneDates: [], subtasks: base.subtasks.map((s) => ({ ...s, done: false })) });
-        setAutoDate(true);
-      }
-      return null;
-    });
-  }, [tasks]);
+    if (!viewId) return;
+    const base = tasks.find((x) => x.id === parseId(viewId).baseId);
+    setViewId(null);
+    if (base) {
+      const { id: _id, done: _done, doneDates: _dd, ...rest } = base;
+      setAutoDate(true);
+      setTimeout(() => setDraft({ ...rest, done: false, doneDates: [], expanded: false, subtasks: base.subtasks.map((s) => ({ ...s, done: false })) }), 230);
+    }
+  }, [viewId, tasks]);
 
   const patch = useCallback((p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d)), []);
   const save = useCallback(() => {
@@ -168,6 +170,15 @@ function Root() {
   }, [deleteTask]);
 
   if (!loaded) return <View style={styles.bg} />;
+
+  // Other planned tasks on the draft's day, so the duration picker can offer
+  // "start after previous" / "end before next".
+  const editorSiblings =
+    draft && draft.type === 'planned' && draft.date
+      ? tasksForDay(draft.date)
+          .filter((t) => t.type === 'planned' && parseId(t.id).baseId !== draft.id)
+          .map((t) => ({ start: t.start, dur: t.dur }))
+      : [];
 
   // Resolve the info-sheet target — a repeating occurrence is reconstructed
   // from its base with the right date and per-occurrence done state.
@@ -236,6 +247,9 @@ function Root() {
         weekStart={settings.weekStart}
         timePresets={settings.timePresets}
         durationPresets={settings.durationPresets}
+        colors={settings.colors}
+        emojis={settings.emojis}
+        siblings={editorSiblings}
         autoPickDate={autoDate}
         onPatch={patch}
         onSave={save}

@@ -53,7 +53,7 @@ export function TaskInfoSheet({
   return (
     <BottomSheet open={visible} onClose={onClose}>
       {t && (
-        <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+        <ScrollView showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
             <LinearGradient colors={[t.color, hexA(t.color, 0.75)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={[styles.icon, { boxShadow: `0 6px 16px -4px ${hexA(t.color, 0.7)}` }]}>
               <Text style={styles.iconTxt}>{t.emoji}</Text>

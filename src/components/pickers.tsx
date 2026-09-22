@@ -10,12 +10,28 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
+import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { C, MONTHS } from '../theme';
 import { Clock } from '../types';
 import { dateFromKey, dateKey, fmt, fmtDur, todayKey, weekdayLetters } from '../utils';
 import { CenterPopup as Popup } from './Overlay';
 import { Tappable } from './anim';
+
+// The recessed drum "deck": a shaded card holding one or more wheel columns,
+// with a highlighted centre band and a soft top/bottom vignette so the whole
+// chip reads as a rounded 3D drum (not two stray lines).
+function WheelDeck({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={styles.wheelRow}>
+      <View pointerEvents="none" style={styles.wheelBand} />
+      {children}
+      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']} style={styles.vignetteTop} />
+      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']} style={styles.vignetteBottom} />
+    </View>
+  );
+}
 
 const ITEM_H = 40;
 const VISIBLE = 5; // odd — one centered row + two on each side
@@ -248,28 +264,31 @@ export function TimePickerPopup({
 
   return (
     <CenterPopup visible={visible} title={title} onClose={onClose}>
-      <View style={styles.wheelRow}>
-        <View pointerEvents="none" style={styles.wheelBand} />
+      <WheelDeck>
         <Wheel values={hourValues} index={hourIdx} onIndex={(i) => commit(i, minIdx, ampmIdx)} format={(v) => pad2(v)} width={64} />
         <Text style={styles.colon}>:</Text>
         <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(hourIdx, i, ampmIdx)} format={(v) => pad2(v)} width={64} />
         {is12 && (
           <Wheel values={[0, 1]} index={ampmIdx} onIndex={(i) => commit(hourIdx, minIdx, i)} format={(v) => (v === 0 ? 'AM' : 'PM')} width={64} />
         )}
-      </View>
+      </WheelDeck>
       <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={(v) => fmt(v, clock)} onPick={onChange} />
     </CenterPopup>
   );
 }
 
-// ---- Duration picker (hours / minutes drums) ------------------------------
+// ---- Duration picker (hours / minutes drums + dynamic options) ------------
 export function DurationPickerPopup({
   visible,
   value,
   presets = [],
   tagPresets = [],
   tagName = null,
+  start = 0,
+  prevEnd = null,
+  nextStart = null,
   onChange,
+  onApplyRange,
   onClose,
 }: {
   visible: boolean;
@@ -277,27 +296,103 @@ export function DurationPickerPopup({
   presets?: number[];
   tagPresets?: number[];
   tagName?: string | null;
+  start?: number; // the task's own start (for the dynamic options)
+  prevEnd?: number | null; // end of the nearest earlier task on the day
+  nextStart?: number | null; // start of the nearest later task on the day
   onChange: (v: number) => void;
+  onApplyRange?: (start: number, dur: number) => void; // set start & duration together
   onClose: () => void;
 }) {
+  const [mode, setMode] = useState<'dur' | 'after' | 'before'>('dur');
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    if (visible) {
+      setMode('dur');
+      setOffset(0);
+    }
+  }, [visible]);
+
   const h = Math.min(12, Math.floor(value / 60));
   const m = value % 60;
   const minIdx = Math.round(m / 5) % 12;
   const hourValues = range(0, 12, 1);
   const minuteValues = range(0, 55, 5);
-
   const commit = (hIdx: number, mIdx: number) => onChange(Math.max(5, hIdx * 60 + mIdx * 5));
+
+  const offsetValues = range(0, 180, 5);
+  const canAfter = prevEnd != null;
+  const canBefore = nextStart != null && nextStart > start;
+  const applyOffset = (v: number) => {
+    setOffset(v);
+    if (mode === 'after' && prevEnd != null) onApplyRange?.(prevEnd + v, value);
+    else if (mode === 'before' && nextStart != null) onApplyRange?.(start, Math.max(5, nextStart - v - start));
+  };
 
   return (
     <CenterPopup visible={visible} title="Duration" onClose={onClose}>
-      <View style={styles.wheelRow}>
-        <View pointerEvents="none" style={styles.wheelBand} />
-        <Wheel values={hourValues} index={h} onIndex={(i) => commit(i, minIdx)} format={(v) => String(v)} width={56} />
-        <Text style={styles.unit}>h</Text>
-        <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(h, i)} format={(v) => pad2(v)} width={56} />
-        <Text style={styles.unit}>m</Text>
-      </View>
-      <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={fmtDur} onPick={onChange} />
+      {mode === 'dur' ? (
+        <>
+          <WheelDeck>
+            <Wheel values={hourValues} index={h} onIndex={(i) => commit(i, minIdx)} format={(v) => String(v)} width={56} />
+            <Text style={styles.unit}>h</Text>
+            <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(h, i)} format={(v) => pad2(v)} width={56} />
+            <Text style={styles.unit}>m</Text>
+          </WheelDeck>
+          <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={fmtDur} onPick={onChange} />
+          {(canAfter || canBefore) && (
+            <>
+              <Text style={styles.dynLabel}>DYNAMIC</Text>
+              <View style={styles.dynRow}>
+                {canAfter && (
+                  <Tappable
+                    onPress={() => {
+                      setOffset(0);
+                      onApplyRange?.(prevEnd! + 0, value);
+                      setMode('after');
+                    }}
+                    style={styles.dynChip}>
+                    <Feather name="corner-left-down" size={14} color={C.accentB} />
+                    <Text style={styles.dynChipTxt}>After previous</Text>
+                  </Tappable>
+                )}
+                {canBefore && (
+                  <Tappable
+                    onPress={() => {
+                      setOffset(0);
+                      onApplyRange?.(start, Math.max(5, nextStart! - 0 - start));
+                      setMode('before');
+                    }}
+                    style={styles.dynChip}>
+                    <Feather name="corner-right-up" size={14} color={C.accentB} />
+                    <Text style={styles.dynChipTxt}>Before next</Text>
+                  </Tappable>
+                )}
+              </View>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <Text style={styles.dynTitle}>{mode === 'after' ? 'Start after previous task' : 'End before next task'}</Text>
+          <WheelDeck>
+            <Wheel values={offsetValues} index={Math.round(offset / 5)} onIndex={(i) => applyOffset(i * 5)} format={(v) => String(v)} width={92} />
+            <Text style={styles.unit}>min</Text>
+          </WheelDeck>
+          <Text style={styles.dynHint}>
+            {mode === 'after'
+              ? offset === 0
+                ? 'Starts right after the previous task ends.'
+                : `Starts ${fmtDur(offset)} after the previous task ends.`
+              : offset === 0
+                ? 'Ends right before the next task starts.'
+                : `Ends ${fmtDur(offset)} before the next task starts.`}
+          </Text>
+          <Tappable onPress={() => setMode('dur')} style={styles.backRow}>
+            <Feather name="chevron-left" size={16} color={C.textDim} />
+            <Text style={styles.backTxt}>Back to duration</Text>
+          </Tappable>
+        </>
+      )}
     </CenterPopup>
   );
 }
@@ -469,9 +564,12 @@ const styles = StyleSheet.create({
     height: WHEEL_H,
     backgroundColor: 'rgba(255,255,255,0.035)',
     borderRadius: 18,
-    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.05)',
+    overflow: 'hidden',
+    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 14px 20px -12px rgba(0,0,0,0.85), inset 0 -14px 20px -12px rgba(0,0,0,0.85)',
     position: 'relative',
   },
+  vignetteTop: { position: 'absolute', left: 0, right: 0, top: 0, height: PAD },
+  vignetteBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: PAD },
   wheelBand: {
     position: 'absolute',
     left: 10,
@@ -498,6 +596,15 @@ const styles = StyleSheet.create({
   chipTxt: { fontSize: 13, fontWeight: '700', color: C.textDim, fontVariant: ['tabular-nums'] },
   chipTxtOn: { color: '#0b0b0d' },
   empty: { color: C.faint, fontSize: 13, paddingVertical: 8, textAlign: 'center', width: '100%' },
+  // Dynamic duration options
+  dynLabel: { fontSize: 11, color: C.muted, fontWeight: '700', letterSpacing: 0.4, marginTop: 18, marginBottom: 9, textAlign: 'center' },
+  dynRow: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
+  dynChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(79,209,197,0.12)' },
+  dynChipTxt: { fontSize: 13, fontWeight: '700', color: C.accentB },
+  dynTitle: { fontSize: 14, fontWeight: '700', color: C.text, textAlign: 'center', marginBottom: 12 },
+  dynHint: { fontSize: 12.5, color: C.muted, textAlign: 'center', marginTop: 14, lineHeight: 17 },
+  backRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 14, paddingVertical: 6 },
+  backTxt: { fontSize: 13.5, fontWeight: '600', color: C.textDim },
 
   // Select list
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 14, borderRadius: 12, marginBottom: 4 },
@@ -519,8 +626,8 @@ const styles = StyleSheet.create({
   calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   calCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
   calDay: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  calDayOn: { backgroundColor: C.accentB },
-  calDayToday: { boxShadow: `inset 0 0 0 1.5px ${C.accentB}` },
+  calDayOn: { backgroundColor: C.accentB, borderRadius: 12 },
+  calDayToday: { borderWidth: 1.5, borderColor: C.accentB, borderRadius: 12 },
   calDayTxt: { fontSize: 14, fontWeight: '600', color: C.text },
   calDayTxtOn: { color: '#0b0b0d', fontWeight: '700' },
   calDayTodayTxt: { color: C.accentB, fontWeight: '700' },

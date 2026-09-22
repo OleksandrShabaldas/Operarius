@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, EMOJIS, C } from '../theme';
+import { C } from '../theme';
 import { Clock, Draft, Place, Preset, Tag, TaskType } from '../types';
 import { dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, todayKey } from '../utils';
+import { CustomColorGrid, CustomIconInput } from './ColorIcon';
 import { PlaceIcon } from './PlaceIcon';
 import { DatePickerPopup, DurationPickerPopup, SelectPopup, TimePickerPopup } from './pickers';
 import { RepeatPopup } from './RepeatPopup';
@@ -20,6 +21,9 @@ type Props = {
   weekStart: 'mon' | 'sun';
   timePresets: Preset[];
   durationPresets: Preset[];
+  colors: string[];
+  emojis: string[];
+  siblings?: { start: number; dur: number }[]; // other planned tasks on the same day (for dynamic durations)
   autoPickDate?: boolean; // open straight into the date picker (used when copying)
   onPatch: (patch: Partial<Draft>) => void;
   onSave: () => void;
@@ -43,6 +47,9 @@ export function TaskEditorSheet({
   weekStart,
   timePresets,
   durationPresets,
+  colors,
+  emojis,
+  siblings,
   autoPickDate,
   onPatch,
   onSave,
@@ -51,8 +58,13 @@ export function TaskEditorSheet({
 }: Props) {
   const visible = !!draft;
   const [picker, setPicker] = useState<Picker>(null);
+  const [iconPage, setIconPage] = useState<'main' | 'color' | 'icon'>('main');
   const [attempted, setAttempted] = useState(false);
   const nameRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    setIconPage('main');
+  }, [picker]);
 
   useEffect(() => {
     if (visible) {
@@ -85,6 +97,19 @@ export function TaskEditorSheet({
   const tTime = topTagId ? timePresets.filter((p) => p.tagId === topTagId).map((p) => p.value) : [];
   const gDur = durationPresets.filter((p) => p.tagId == null).map((p) => p.value);
   const tDur = topTagId ? durationPresets.filter((p) => p.tagId === topTagId).map((p) => p.value) : [];
+
+  // Nearest neighbours on the same day, for the dynamic duration options.
+  const startMin = d?.start ?? 0;
+  let prevEnd: number | null = null;
+  let nextStart: number | null = null;
+  for (const sb of siblings ?? []) {
+    if (sb.start < startMin) {
+      const e = sb.start + sb.dur;
+      if (prevEnd == null || e > prevEnd) prevEnd = e;
+    } else if (sb.start > startMin) {
+      if (nextStart == null || sb.start < nextStart) nextStart = sb.start;
+    }
+  }
 
   const addSubtask = () => d && onPatch({ subtasks: [...d.subtasks, { id: genId(), title: '', done: false }] });
   const patchSubtask = (id: string, title: string) =>
@@ -266,7 +291,7 @@ export function TaskEditorSheet({
 
       {/* Icon + color picker */}
       <CenterPopup open={picker === 'icon'} onClose={() => setPicker(null)}>
-        {d && (
+        {d && iconPage === 'main' && (
           <>
             <Text style={styles.pickerTitle}>Icon &amp; color</Text>
             <View style={styles.previewRow}>
@@ -276,17 +301,22 @@ export function TaskEditorSheet({
             </View>
             <Text style={styles.pickerSection}>COLOR</Text>
             <View style={styles.wrapRow}>
-              {COLORS.map((c) => (
+              {colors.map((c) => (
                 <Tappable
                   key={c}
                   onPress={() => onPatch({ color: c })}
                   style={[styles.swatch, { backgroundColor: c, boxShadow: d.color === c ? `0 0 0 3px ${C.sheet}, 0 0 0 5px ${c}` : undefined }]}
                 />
               ))}
+              <Tappable onPress={() => setIconPage('color')} style={styles.customSwatch}>
+                <LinearGradient colors={['#F8677A', '#F2C14E', '#5FD08A', '#5B9DF9', '#B57CF0']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.customSwatchFill}>
+                  <Feather name="plus" size={15} color="#0b0b0d" />
+                </LinearGradient>
+              </Tappable>
             </View>
             <Text style={styles.pickerSection}>ICON</Text>
             <View style={styles.wrapRow}>
-              {EMOJIS.map((ch) => (
+              {emojis.map((ch) => (
                 <Tappable
                   key={ch}
                   onPress={() => onPatch({ emoji: ch })}
@@ -294,8 +324,29 @@ export function TaskEditorSheet({
                   <Text style={styles.emojiTxt}>{ch}</Text>
                 </Tappable>
               ))}
+              <Tappable onPress={() => setIconPage('icon')} style={[styles.emoji, styles.customEmoji]}>
+                <Feather name="edit-3" size={16} color={C.accentB} />
+              </Tappable>
             </View>
             <Tappable onPress={() => setPicker(null)} style={styles.pickerDone}>
+              <Text style={styles.pickerDoneTxt}>Done</Text>
+            </Tappable>
+          </>
+        )}
+        {d && iconPage === 'color' && (
+          <>
+            <Text style={styles.pickerTitle}>Custom color</Text>
+            <CustomColorGrid value={d.color} onPick={(hex) => onPatch({ color: hex })} />
+            <Tappable onPress={() => setIconPage('main')} style={styles.pickerDone}>
+              <Text style={styles.pickerDoneTxt}>Done</Text>
+            </Tappable>
+          </>
+        )}
+        {d && iconPage === 'icon' && (
+          <>
+            <Text style={styles.pickerTitle}>Custom icon</Text>
+            <CustomIconInput value={d.emoji} onChange={(v) => onPatch({ emoji: v })} />
+            <Tappable onPress={() => setIconPage('main')} style={styles.pickerDone}>
               <Text style={styles.pickerDoneTxt}>Done</Text>
             </Tappable>
           </>
@@ -304,7 +355,19 @@ export function TaskEditorSheet({
 
       <TimePickerPopup visible={picker === 'start'} title="Start time" value={d?.start ?? 0} presets={gTime} tagPresets={tTime} tagName={topTagName} clock={clock} onChange={(v) => onPatch({ start: v })} onClose={() => setPicker(null)} />
       <TimePickerPopup visible={picker === 'end'} title="End time" value={end} presets={gTime} tagPresets={tTime} tagName={topTagName} clock={clock} onChange={(v) => d && onPatch({ dur: Math.max(5, v - d.start) })} onClose={() => setPicker(null)} />
-      <DurationPickerPopup visible={picker === 'dur'} value={d?.dur ?? 30} presets={gDur} tagPresets={tDur} tagName={topTagName} onChange={(v) => onPatch({ dur: v })} onClose={() => setPicker(null)} />
+      <DurationPickerPopup
+        visible={picker === 'dur'}
+        value={d?.dur ?? 30}
+        presets={gDur}
+        tagPresets={tDur}
+        tagName={topTagName}
+        start={startMin}
+        prevEnd={prevEnd}
+        nextStart={nextStart}
+        onChange={(v) => onPatch({ dur: v })}
+        onApplyRange={(st, du) => onPatch({ start: st, dur: du })}
+        onClose={() => setPicker(null)}
+      />
       <DatePickerPopup visible={picker === 'date'} value={d?.date || todayKey()} weekStart={weekStart} onChange={(key) => onPatch({ date: key })} onClose={() => setPicker(null)} />
       <SelectPopup visible={picker === 'tag'} title="Select tag" options={tagOptions} selectedId={d?.tagId ?? null} emptyText="No tags yet — add some in Settings." onSelect={(id) => onPatch({ tagId: id })} onClose={() => setPicker(null)} />
       <PlaceSelectPopup visible={picker === 'place'} places={places} tags={tags} selectedId={d?.placeId ?? null} taskTagId={d?.tagId ?? null} onSelect={(id) => onPatch({ placeId: id })} onClose={() => setPicker(null)} />
@@ -409,7 +472,10 @@ const styles = StyleSheet.create({
   previewTxt: { fontSize: 28 },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   swatch: { width: 32, height: 32, borderRadius: 16, marginVertical: 2, marginHorizontal: 1 },
+  customSwatch: { width: 32, height: 32, borderRadius: 16, marginVertical: 2, marginHorizontal: 1, overflow: 'hidden' },
+  customSwatchFill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emoji: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  customEmoji: { backgroundColor: 'rgba(79,209,197,0.12)' },
   emojiTxt: { fontSize: 18 },
   pickerDone: { height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   pickerDoneTxt: { fontSize: 15, fontWeight: '700', color: C.text },

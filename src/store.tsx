@@ -14,6 +14,7 @@ type Ctx = {
   deleteTask: (id: string) => void;
   toggleDone: (id: string) => void;
   toggleSubtask: (taskId: string, subId: string) => void;
+  toggleExpanded: (id: string) => void; // show/hide subtasks inline on the card
   moveTask: (id: string, start: number) => void; // commit a drag
   updateSettings: (patch: Partial<Settings>) => void;
   clearCompleted: (dateKey?: string) => void; // all days if omitted
@@ -127,6 +128,11 @@ export function AppProvider({
     );
   }, []);
 
+  const toggleExpanded = useCallback((id: string) => {
+    const { baseId } = parseId(id);
+    setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, expanded: !t.expanded } : t)));
+  }, []);
+
   const moveTask = useCallback((id: string, start: number) => {
     const { baseId } = parseId(id);
     setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, start } : t)));
@@ -213,6 +219,7 @@ export function AppProvider({
     deleteTask,
     toggleDone,
     toggleSubtask,
+    toggleExpanded,
     moveTask,
     updateSettings,
     clearCompleted,

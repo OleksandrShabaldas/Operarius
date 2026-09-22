@@ -28,6 +28,7 @@ export type Task = {
   subtasks: Subtask[];
   repeat: Repeat | null; // recurrence rule (planned/allday)
   doneDates: string[]; // per-occurrence completion for repeating tasks
+  expanded: boolean; // subtasks shown inline on the card (persisted)
 };
 
 // A task being composed/edited in the editor sheet. `id` is absent when new.
@@ -62,4 +63,7 @@ export type Settings = {
   places: Place[];
   timePresets: Preset[]; // minutes-of-day quick picks for start/end
   durationPresets: Preset[]; // minute quick picks for duration
+  colors: string[]; // the task color palette (editable)
+  emojis: string[]; // the task icon set (editable)
+  swapOnDrag: boolean; // dragging a task past another swaps them (off = allow overlap)
 };

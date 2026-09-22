@@ -6,6 +6,8 @@ import {
   DEFAULT_GAP_THRESHOLD,
   DEFAULT_TIME_PRESETS,
   DEFAULT_DURATION_PRESETS,
+  COLORS,
+  EMOJIS,
 } from './theme';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +50,9 @@ export const DEFAULT_SETTINGS: Settings = {
   places: DEFAULT_PLACES,
   timePresets: toPresets(DEFAULT_TIME_PRESETS),
   durationPresets: toPresets(DEFAULT_DURATION_PRESETS),
+  colors: [...COLORS],
+  emojis: [...EMOJIS],
+  swapOnDrag: false,
 };
 
 // Normalize a persisted preset list (older builds stored plain numbers).
@@ -91,6 +96,7 @@ function migrateTask(raw: any): Task {
     subtasks: Array.isArray(raw.subtasks) ? raw.subtasks : [],
     repeat: migrateRepeat(raw.repeat),
     doneDates: Array.isArray(raw.doneDates) ? raw.doneDates.filter((d: any) => typeof d === 'string') : [],
+    expanded: !!raw.expanded,
   };
 }
 
@@ -150,6 +156,9 @@ export const localRepository: Repository = {
         places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
         timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
         durationPresets: migratePresets(parsed.durationPresets, toPresets(DEFAULT_DURATION_PRESETS)),
+        colors: Array.isArray(parsed.colors) && parsed.colors.length ? parsed.colors : [...COLORS],
+        emojis: Array.isArray(parsed.emojis) && parsed.emojis.length ? parsed.emojis : [...EMOJIS],
+        swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -181,7 +190,7 @@ export const localRepository: Repository = {
 // The sample day from the prototype, seeded onto the first launch so a new
 // install opens looking exactly like the design.
 export function seedTasks(todayKey: string): Task[] {
-  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks' | 'repeat' | 'doneDates'>[] = [
+  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks' | 'repeat' | 'doneDates' | 'expanded'>[] = [
     { title: 'Morning run', emoji: '🏃', color: '#5FD08A', start: 7 * 60, dur: 30, done: true, tagId: 'health', placeId: null },
     { title: 'Shower', emoji: '🚿', color: '#5B9DF9', start: 8 * 60, dur: 15, done: false, tagId: null, placeId: null },
     { title: 'Breakfast', emoji: '🍳', color: '#F2C14E', start: 8 * 60 + 15, dur: 30, done: false, tagId: null, placeId: null },
@@ -201,5 +210,6 @@ export function seedTasks(todayKey: string): Task[] {
     subtasks: [],
     repeat: null,
     doneDates: [],
+    expanded: false,
   }));
 }

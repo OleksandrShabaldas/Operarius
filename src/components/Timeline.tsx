@@ -18,6 +18,7 @@ type Props = {
   viewportH: number; // ScrollView height, so the end-of-day band can reach the screen bottom
   nowMin: number | null; // null when the viewed day is not today
   dayState: DayState;
+  allowOverlap: boolean; // tasks may overlap in time (off = dragging swaps instead)
   dragId: string | null;
   dragMin: number;
   onDragStart: (id: string) => void;
@@ -25,6 +26,8 @@ type Props = {
   onDragEnd: (id: string) => void;
   onOpen: (id: string) => void;
   onToggle: (id: string) => void;
+  onToggleSubtask: (id: string, subId: string) => void;
+  onToggleExpanded: (id: string) => void;
   onAddAt: (startMin: number) => void;
 };
 
@@ -66,13 +69,12 @@ function HourTicks({
 
 export function Timeline(props: Props) {
   const { tasks, tags, places, clock, dayStart, dayEnd, gapThreshold, viewportH, nowMin, dayState, dragId, dragMin } = props;
-  const { sorted, pos, freeblocks, chips, botTop, H, yAt } = computeDayLayout(
+  const { sorted, pos, freeblocks, chips, overlaps, botTop, H, yAt } = computeDayLayout(
     tasks,
     dayStart,
     dayEnd,
-    dragId,
-    dragMin,
-    gapThreshold
+    gapThreshold,
+    props.allowOverlap
   );
 
   const showNow = nowMin != null && nowMin >= dayStart && nowMin <= dayEnd;
@@ -149,7 +151,17 @@ export function Timeline(props: Props) {
           onDragEnd={props.onDragEnd}
           onOpen={props.onOpen}
           onToggle={props.onToggle}
+          onToggleSubtask={props.onToggleSubtask}
+          onToggleExpanded={props.onToggleExpanded}
         />
+      ))}
+
+      {/* Overlap regions — diagonal blend + "Overlapping" label where cards intersect. */}
+      {overlaps.map((o) => (
+        <View key={o.key} pointerEvents="none" style={[styles.overlap, { top: o.top, height: o.height }]}>
+          <Hatch color="#ffffff" opacity={0.32} radius={12} fade={C.card} fadeSize={18} style={StyleSheet.absoluteFill} />
+          <Text style={styles.overlapTxt}>Overlapping</Text>
+        </View>
       ))}
 
       {/* End-of-day band — full width, extends to the bottom of the screen. */}
@@ -246,6 +258,8 @@ const styles = StyleSheet.create({
     boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.09)',
   },
   chipTxt: { fontSize: 10.5, fontWeight: '600', color: C.muted },
+  overlap: { position: 'absolute', left: 56, right: 16, alignItems: 'center', justifyContent: 'center', zIndex: 6 },
+  overlapTxt: { fontSize: 10.5, fontWeight: '800', color: C.now, letterSpacing: 0.5, backgroundColor: 'rgba(11,11,13,0.55)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   nowLine: {
     position: 'absolute',
     left: 0,

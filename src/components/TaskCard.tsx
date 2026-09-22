@@ -12,15 +12,41 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, Line, RadialGradient, Stop } from 'react-native-svg';
 import { Clock, Place, Tag, Task } from '../types';
 import { C, PX } from '../theme';
 import { fmt, fmtDur, findTag, hexA, placeLabel } from '../utils';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
-import { Hatch } from './Hatch';
 import { stagger, Tappable } from './anim';
 
 export type DayState = 'past' | 'today' | 'future';
+
+// Faded red diagonal warning stripes, radiating from (and centred on) the
+// "Missed" badge in the corner. Transparent everywhere else — no dark box.
+const STRIPE_W = 132;
+const STRIPE_H = 58;
+const SUB_ROW_H = 25; // keep in sync with layout.ts SUB_ROW_H
+let warnSeq = 0;
+function WarningStripes() {
+  const id = React.useMemo(() => `warn${warnSeq++}`, []);
+  const lines: React.ReactNode[] = [];
+  for (let x = -STRIPE_H; x < STRIPE_W; x += 6) {
+    lines.push(<Line key={x} x1={x} y1={0} x2={x + STRIPE_H} y2={STRIPE_H} stroke={`url(#${id})`} strokeWidth={1.1} />);
+  }
+  return (
+    <Svg width={STRIPE_W} height={STRIPE_H} style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Defs>
+        <RadialGradient id={id} cx="80%" cy="26%" r="82%">
+          <Stop offset="0" stopColor={C.now} stopOpacity={0.4} />
+          <Stop offset="0.5" stopColor={C.now} stopOpacity={0.15} />
+          <Stop offset="1" stopColor={C.now} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      {lines}
+    </Svg>
+  );
+}
 
 type Props = {
   task: Task;
@@ -40,6 +66,8 @@ type Props = {
   onDragEnd: (id: string) => void;
   onOpen: (id: string) => void;
   onToggle: (id: string) => void;
+  onToggleSubtask: (id: string, subId: string) => void;
+  onToggleExpanded: (id: string) => void;
 };
 
 // Visual content of a card (icon + text + meta). Rendered once for the colored
@@ -87,6 +115,42 @@ function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number
   );
 }
 
+// Inline subtask strip at the bottom of a card: a "n/m subtasks" toggle that
+// expands to show tappable subtask rows. Expanded state is persisted per task.
+function SubtaskStrip({
+  task,
+  onToggleExpanded,
+  onToggleSubtask,
+}: {
+  task: Task;
+  onToggleExpanded: () => void;
+  onToggleSubtask: (subId: string) => void;
+}) {
+  const done = task.subtasks.filter((s) => s.done).length;
+  const total = task.subtasks.length;
+  return (
+    <View style={styles.subStrip}>
+      <Tappable onPress={onToggleExpanded} hitSlop={6} style={styles.subToggle}>
+        <Feather name={task.expanded ? 'chevron-up' : 'chevron-down'} size={13} color={C.muted} />
+        <Text style={styles.subToggleTxt}>
+          {done}/{total} subtasks
+        </Text>
+      </Tappable>
+      {task.expanded &&
+        task.subtasks.map((sub) => (
+          <Tappable key={sub.id} onPress={() => onToggleSubtask(sub.id)} hitSlop={4} style={styles.subItem}>
+            <View style={[styles.subDot, sub.done && { backgroundColor: task.color, borderColor: task.color }]}>
+              {sub.done && <Feather name="check" size={9} color="#0b0b0d" />}
+            </View>
+            <Text style={[styles.subItemTxt, sub.done && styles.subItemDone]} numberOfLines={1}>
+              {sub.title || 'Untitled'}
+            </Text>
+          </Tappable>
+        ))}
+    </View>
+  );
+}
+
 function TaskCardBase(props: Props) {
   const { task, tags, places, clock, pos, isDragging, nowMin, dayStart, dayEnd, liveStart } = props;
   const topSV = useSharedValue(pos.top);
@@ -95,10 +159,12 @@ function TaskCardBase(props: Props) {
   const lastMinRef = useRef(task.start);
   const draggingRef = useRef(false);
 
+  // The layout is stable (real starts); while dragging, this card floats to
+  // follow the finger by the drag delta so the rest of the timeline stays put.
   useEffect(() => {
-    if (isDragging) topSV.value = pos.top;
+    if (isDragging) topSV.value = pos.top + (liveStart - task.start) * PX;
     else topSV.value = withTiming(pos.top, { duration: 200, easing: Easing.out(Easing.cubic) });
-  }, [pos.top, isDragging, topSV]);
+  }, [pos.top, isDragging, liveStart, task.start, topSV]);
 
   const beginDrag = () => {
     draggingRef.current = true;
@@ -163,19 +229,29 @@ function TaskCardBase(props: Props) {
   return (
     <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]} entering={stagger(props.index)}>
       <Animated.View style={[styles.card, cardAnim, { minHeight: pos.h, boxShadow: cardShadow }]}>
-        <GestureDetector gesture={gesture}>
-          <Animated.View style={styles.grab}>
-            <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} />
-          </Animated.View>
-        </GestureDetector>
+        <View style={styles.cardMain}>
+          <GestureDetector gesture={gesture}>
+            <Animated.View style={styles.grab}>
+              <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} />
+            </Animated.View>
+          </GestureDetector>
 
-        <Tappable
-          onPress={() => props.onToggle(task.id)}
-          hitSlop={8}
-          scaleTo={0.82}
-          style={[styles.check, { backgroundColor: task.done ? color : 'transparent', boxShadow: `inset 0 0 0 2px ${task.done ? color : hexA(color, 0.5)}` }]}>
-          {task.done && <Text style={styles.checkMark}>✓</Text>}
-        </Tappable>
+          <Tappable
+            onPress={() => props.onToggle(task.id)}
+            hitSlop={8}
+            scaleTo={0.82}
+            style={[styles.check, { backgroundColor: task.done ? color : 'transparent', boxShadow: `inset 0 0 0 2px ${task.done ? color : hexA(color, 0.5)}` }]}>
+            {task.done && <Text style={styles.checkMark}>✓</Text>}
+          </Tappable>
+        </View>
+
+        {task.subtasks.length > 0 && (
+          <SubtaskStrip
+            task={task}
+            onToggleExpanded={() => props.onToggleExpanded(task.id)}
+            onToggleSubtask={(sid) => props.onToggleSubtask(task.id, sid)}
+          />
+        )}
 
         {/* Grayscale + dim via blend overlays (no content copy). */}
         {oh >= 2 && (
@@ -193,7 +269,7 @@ function TaskCardBase(props: Props) {
 
         {missed && (
           <View pointerEvents="none" style={styles.missedWrap}>
-            <Hatch color={C.now} opacity={0.06} radius={0} style={StyleSheet.absoluteFill} />
+            <WarningStripes />
             <View style={styles.missedBadge}>
               <Text style={styles.missedTxt}>Missed</Text>
             </View>
@@ -211,22 +287,27 @@ const styles = StyleSheet.create({
   card: {
     position: 'relative',
     overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 16,
     backgroundColor: C.card,
   },
+  cardMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  subStrip: { marginTop: 8, paddingLeft: 2 },
+  subToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 22, alignSelf: 'flex-start' },
+  subToggleTxt: { fontSize: 12, fontWeight: '700', color: C.muted },
+  subItem: { flexDirection: 'row', alignItems: 'center', gap: 9, height: SUB_ROW_H },
+  subDot: { width: 17, height: 17, borderRadius: 5, borderWidth: 2, borderColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  subItemTxt: { fontSize: 13, color: C.textDim, flex: 1 },
+  subItemDone: { color: C.faint, textDecorationLine: 'line-through' },
   // 'saturation' blend with a neutral-gray fill desaturates the backdrop in
   // this region (the elapsed part of the card); the dim adds the "past" fade.
   desat: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#808080', mixBlendMode: 'saturation' },
   dim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(11,11,13,0.32)' },
-  // "Missed": flush in the top-right corner, sitting over a heavily-faded red
-  // warning hatch that blends into the card corner.
-  missedWrap: { position: 'absolute', top: 0, right: 0, width: 96, height: 40, alignItems: 'flex-end', overflow: 'hidden', borderBottomLeftRadius: 18, borderTopRightRadius: 16 },
-  missedBadge: { marginTop: 7, marginRight: 8, backgroundColor: 'rgba(255,90,95,0.18)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, boxShadow: 'inset 0 0 0 1px rgba(255,90,95,0.3)' },
+  // "Missed": flush in the top-right corner, over faded red warning stripes
+  // that radiate from the badge (transparent — no box).
+  missedWrap: { position: 'absolute', top: 0, right: 0, width: STRIPE_W, height: STRIPE_H, alignItems: 'flex-end' },
+  missedBadge: { marginTop: 8, marginRight: 8, backgroundColor: 'rgba(255,90,95,0.16)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, boxShadow: 'inset 0 0 0 1px rgba(255,90,95,0.32)' },
   missedTxt: { fontSize: 9.5, fontWeight: '800', color: '#ff5a5f', letterSpacing: 0.4 },
   noteBadge: { position: 'absolute', top: 6, left: 6, width: 18, height: 18, borderRadius: 6, backgroundColor: 'rgba(20,21,24,0.82)', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.1)' },
   grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },

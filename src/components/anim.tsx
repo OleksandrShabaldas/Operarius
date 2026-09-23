@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Pressable, PressableProps, StyleProp, ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   FadeInDown,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withSpring,
 } from 'react-native-reanimated';
 
@@ -67,3 +68,36 @@ export function stagger(index: number, base = 24, step = 26) {
 }
 
 export const EASE_OUT = Easing.out(Easing.cubic);
+
+// Mount animation driven by a shared value rather than a layout `entering`
+// animation, so it is safe INSIDE containers that themselves animate in
+// (popups, sheets). `from` picks the motion; `delay` staggers siblings.
+export function Appear({
+  children,
+  style,
+  delay = 0,
+  from = 'pop',
+  distance = 12,
+}: {
+  children?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  delay?: number;
+  from?: 'pop' | 'up' | 'down' | 'left' | 'right';
+  distance?: number;
+}) {
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = withDelay(delay, withSpring(1, { damping: 17, stiffness: 230, mass: 0.7 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const a = useAnimatedStyle(() => {
+    const o = Math.min(1, Math.max(0, p.value * 1.35));
+    const k = 1 - p.value;
+    if (from === 'pop') return { opacity: o, transform: [{ scale: 0.55 + 0.45 * p.value }] };
+    if (from === 'up') return { opacity: o, transform: [{ translateY: k * distance }] };
+    if (from === 'down') return { opacity: o, transform: [{ translateY: -k * distance }] };
+    if (from === 'left') return { opacity: o, transform: [{ translateX: -k * distance }] };
+    return { opacity: o, transform: [{ translateX: k * distance }] };
+  });
+  return <Animated.View style={[style, a]}>{children}</Animated.View>;
+}

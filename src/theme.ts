@@ -20,19 +20,19 @@ export const DEFAULT_TIME_PRESETS = [6 * 60, 8 * 60, 9 * 60, 12 * 60, 13 * 60, 1
 export const DEFAULT_DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
 
 // Palette -------------------------------------------------------------------
-export const COLORS = [
-  '#F8677A',
-  '#F5A15C',
-  '#F2C14E',
-  '#5FD08A',
-  '#4FD1C5',
-  '#5B9DF9',
-  '#7C7CF0',
-  '#B57CF0',
-  '#F072B6',
-];
+// The palette and the icon set have a FIXED number of slots so the icon &
+// colour picker always shows complete rows: 7 colours + the custom swatch make
+// one row of 8, and 13 icons + the custom icon make two rows of 7. Slots are
+// edited in place in Settings (never added/removed).
+export const PALETTE_SLOTS = 7;
+export const ICON_SLOTS = 13;
 
-export const EMOJIS = ['🏃', '🚿', '🍳', '💻', '👥', '🥗', '🎨', '🏋️', '📖', '☕', '📞', '✈️'];
+export const COLORS = ['#F8677A', '#F5A15C', '#F2C14E', '#5FD08A', '#4FD1C5', '#5B9DF9', '#B57CF0'];
+
+// The 9-colour default older builds stored (migrated to the 7 above).
+export const LEGACY_COLORS = ['#F8677A', '#F5A15C', '#F2C14E', '#5FD08A', '#4FD1C5', '#5B9DF9', '#7C7CF0', '#B57CF0', '#F072B6'];
+
+export const EMOJIS = ['🏃', '🚿', '🍳', '💻', '👥', '🥗', '🎨', '🏋️', '📖', '☕', '📞', '✈️', '🛒'];
 
 export const TAGS = ['Work', 'Focus', 'Health', 'Personal', 'Errand'];
 

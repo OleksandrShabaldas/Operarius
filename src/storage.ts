@@ -8,6 +8,9 @@ import {
   DEFAULT_DURATION_PRESETS,
   COLORS,
   EMOJIS,
+  ICON_SLOTS,
+  LEGACY_COLORS,
+  PALETTE_SLOTS,
 } from './theme';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +57,20 @@ export const DEFAULT_SETTINGS: Settings = {
   emojis: [...EMOJIS],
   swapOnDrag: false,
 };
+
+// The palette / icon set always hold exactly `n` distinct entries (so pickers
+// show full rows): extras are trimmed and gaps topped up with unused defaults.
+export function fitSlots(raw: unknown, defaults: string[], n: number): string[] {
+  const list = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : [];
+  const out: string[] = [];
+  const has = (v: string) => out.some((o) => o.toLowerCase() === v.toLowerCase());
+  for (const v of list) if (!has(v)) out.push(v);
+  for (const d of defaults) if (out.length < n && !has(d)) out.push(d);
+  return out.slice(0, n);
+}
+
+const sameList = (a: unknown, b: string[]) =>
+  Array.isArray(a) && a.length === b.length && a.every((v, i) => typeof v === 'string' && v.toLowerCase() === b[i].toLowerCase());
 
 // Normalize a persisted preset list (older builds stored plain numbers).
 function migratePresets(raw: any, fallback: { value: number; tagId: string | null }[]) {
@@ -156,8 +173,8 @@ export const localRepository: Repository = {
         places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
         timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
         durationPresets: migratePresets(parsed.durationPresets, toPresets(DEFAULT_DURATION_PRESETS)),
-        colors: Array.isArray(parsed.colors) && parsed.colors.length ? parsed.colors : [...COLORS],
-        emojis: Array.isArray(parsed.emojis) && parsed.emojis.length ? parsed.emojis : [...EMOJIS],
+        colors: sameList(parsed.colors, LEGACY_COLORS) ? [...COLORS] : fitSlots(parsed.colors, COLORS, PALETTE_SLOTS),
+        emojis: fitSlots(parsed.emojis, EMOJIS, ICON_SLOTS),
         swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
       };
     } catch {

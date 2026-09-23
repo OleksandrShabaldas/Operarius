@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
-import { C, COLORS } from '../theme';
+import { C, COLORS, EMOJIS, ICON_SLOTS, PALETTE_SLOTS } from '../theme';
 import { Tag } from '../types';
 import { useApp } from '../store';
 import { fmt, fmtDur } from '../utils';
 import { TextPromptModal } from '../components/TextPromptModal';
 import { PlaceIcon } from '../components/PlaceIcon';
 import { PlaceEditorPopup } from '../components/PlaceEditorPopup';
-import { CustomColorGrid, CustomIconInput } from '../components/ColorIcon';
+import { ColorSwatch, CustomColorGrid, CustomIconInput, IconCell, PaletteRow, SlotGrid } from '../components/ColorIcon';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
 import { CenterPopup } from '../components/Overlay';
-import { Tappable } from '../components/anim';
+import { Appear, Tappable } from '../components/anim';
 
 const Pressable = Tappable; // every tappable control gets press feedback
 
@@ -22,8 +22,8 @@ type Prompt = { title: string; initial: string; submitLabel: string; onSubmit: (
 
 const CATS: { id: Category; label: string; icon: keyof typeof Feather.glyphMap; sub: string }[] = [
   { id: 'general', label: 'General', icon: 'sliders', sub: 'Day window, week start, gaps' },
-  { id: 'appearance', label: 'Appearance', icon: 'clock', sub: 'Time format' },
-  { id: 'tags', label: 'Tags', icon: 'tag', sub: 'Tags and sub-tags' },
+  { id: 'appearance', label: 'Appearance', icon: 'droplet', sub: 'Time format, colors & icons' },
+  { id: 'tags', label: 'Tags', icon: 'tag', sub: 'Tags, sub-tags & week dots' },
   { id: 'places', label: 'Places', icon: 'map-pin', sub: 'Saved places' },
   { id: 'presets', label: 'Presets', icon: 'zap', sub: 'Quick time & duration picks' },
   { id: 'data', label: 'Data', icon: 'database', sub: 'Clear tasks' },
@@ -45,7 +45,7 @@ export function SettingsScreen({
   const app = useApp();
   const {
     settings, updateSettings, clearCompleted, clearAll,
-    addTag, renameTag, setTagColor, deleteTag,
+    addTag, renameTag, setTagColor, setTagHideDots, deleteTag,
     addPlace, renamePlace, setPlaceTag, setPlaceLink, setPlacePhoto, deletePlace,
   } = app;
   const [cat, setCat] = useState<Category | null>(null);
@@ -56,8 +56,8 @@ export function SettingsScreen({
   const [placeTab, setPlaceTab] = useState<string | null>(null); // null = Untagged
   const [presetTab, setPresetTab] = useState<string | null>(null); // null = Global
   const [placeEdit, setPlaceEdit] = useState<string | null>(null);
-  const [colorAdd, setColorAdd] = useState(false);
-  const [iconAdd, setIconAdd] = useState(false);
+  const [slotEdit, setSlotEdit] = useState<{ kind: 'color' | 'icon'; index: number } | null>(null);
+  const [tagColorPage, setTagColorPage] = useState<'main' | 'custom'>('main');
   const [tempColor, setTempColor] = useState('#7c7cf0');
   const [tempIcon, setTempIcon] = useState('');
 
@@ -81,6 +81,7 @@ export function SettingsScreen({
 
   const topTags = settings.tags.filter((t) => t.parentId == null);
   const subtagsOf = (id: string) => settings.tags.filter((t) => t.parentId === id);
+  const pickedTag = colorPick ? settings.tags.find((t) => t.id === colorPick) ?? null : null;
 
   const title = cat ? CATS.find((c) => c.id === cat)!.label : 'Settings';
 
@@ -141,7 +142,11 @@ export function SettingsScreen({
                 <Text style={[styles.segTxt, { color: settings.swapOnDrag ? '#0b0b0d' : C.textDim }]}>Push apart</Text>
               </Pressable>
             </View>
-            <Text style={styles.hint}>Overlap lets two tasks share a time slot (shown with a warning). Push apart keeps them stacked.</Text>
+            <Text style={styles.hint}>
+              {settings.swapOnDrag
+                ? 'A task dropped onto another lands right before or after it (whichever side you dropped it on), so tasks never overlap.'
+                : 'A task dropped onto another keeps the exact time you chose; overlapping tasks are shown joined, with an “Overlapping” warning.'}
+            </Text>
           </View>
         )}
 
@@ -157,50 +162,53 @@ export function SettingsScreen({
             </View>
 
             <Text style={styles.section}>TASK COLORS</Text>
-            <View style={styles.paletteWrap}>
-              {settings.colors.map((c) => (
-                <View key={c} style={styles.paletteItem}>
-                  <View style={[styles.paletteSwatch, { backgroundColor: c }]} />
-                  {settings.colors.length > 1 && (
-                    <Pressable hitSlop={6} style={styles.paletteX} onPress={() => updateSettings({ colors: settings.colors.filter((x) => x !== c) })}>
-                      <Feather name="x" size={10} color={C.text} />
-                    </Pressable>
-                  )}
-                </View>
-              ))}
-              <Pressable style={styles.paletteAdd} onPress={() => { setTempColor('#7C7CF0'); setColorAdd(true); }}>
-                <Feather name="plus" size={16} color={C.accentA} />
-              </Pressable>
+            <View style={styles.slotCard}>
+              <SlotGrid
+                items={[...settings.colors, null]}
+                cols={PALETTE_SLOTS + 1}
+                maxSize={38}
+                gutter={6}
+                renderCell={(c, i, size) =>
+                  c ? (
+                    <ColorSwatch key={`${i}-${c}`} color={c} size={size} selected={false} delay={40 + i * 22} onPress={() => { setTempColor(c); setSlotEdit({ kind: 'color', index: i }); }} />
+                  ) : (
+                    <ResetTile round size={size} delay={40 + i * 22} onPress={() => confirm('Reset', 'Reset the palette to the default colors?', () => updateSettings({ colors: [...COLORS] }))} />
+                  )
+                }
+              />
             </View>
+            <Text style={styles.hint}>Tap a color to change it. These {PALETTE_SLOTS} fill one row in a task's icon & color picker, next to the custom color option.</Text>
 
             <Text style={styles.section}>TASK ICONS</Text>
-            <View style={styles.paletteWrap}>
-              {settings.emojis.map((e) => (
-                <View key={e} style={styles.iconItem}>
-                  <Text style={styles.iconItemTxt}>{e}</Text>
-                  {settings.emojis.length > 1 && (
-                    <Pressable hitSlop={6} style={styles.paletteX} onPress={() => updateSettings({ emojis: settings.emojis.filter((x) => x !== e) })}>
-                      <Feather name="x" size={10} color={C.text} />
-                    </Pressable>
-                  )}
-                </View>
-              ))}
-              <Pressable style={styles.paletteAdd} onPress={() => { setTempIcon(''); setIconAdd(true); }}>
-                <Feather name="plus" size={16} color={C.accentA} />
-              </Pressable>
+            <View style={styles.slotCard}>
+              <SlotGrid
+                items={[...settings.emojis, null]}
+                cols={Math.ceil((ICON_SLOTS + 1) / 2)}
+                maxSize={42}
+                gutter={6}
+                renderCell={(e, i, size) =>
+                  e ? (
+                    <IconCell key={`${i}-${e}`} glyph={e} size={size} selected={false} delay={60 + i * 16} onPress={() => { setTempIcon(e); setSlotEdit({ kind: 'icon', index: i }); }} />
+                  ) : (
+                    <ResetTile size={size} delay={60 + i * 16} onPress={() => confirm('Reset', 'Reset the icon set to the defaults?', () => updateSettings({ emojis: [...EMOJIS] }))} />
+                  )
+                }
+              />
             </View>
+            <Text style={styles.hint}>Tap an icon to swap it for any emoji or up to two letters. They fill two rows in the picker, next to the custom icon option.</Text>
           </View>
         )}
 
         {cat === 'tags' && (
           <View style={{ marginTop: 10 }}>
-            {topTags.map((tag: Tag) => (
-              <View key={tag.id} style={styles.manageBlock}>
+            {topTags.map((tag: Tag, ti) => (
+              <Appear key={tag.id} from="up" delay={30 + ti * 40} style={styles.manageBlock}>
                 <View style={styles.manageRow}>
-                  <Pressable onPress={() => setColorPick(tag.id)} style={[styles.tagSwatch, { backgroundColor: tag.color }]} />
+                  <Pressable onPress={() => { setTagColorPage('main'); setColorPick(tag.id); }} style={[styles.tagSwatch, { backgroundColor: tag.color }]} />
                   <Pressable style={styles.manageName} onPress={() => setPrompt({ title: 'Rename tag', initial: tag.name, submitLabel: 'Save', onSubmit: (t) => renameTag(tag.id, t) })}>
-                    <Text style={styles.manageNameTxt}>{tag.name}</Text>
+                    <Text style={[styles.manageNameTxt, tag.hideDots && styles.nameHidden]} numberOfLines={1}>{tag.name}</Text>
                   </Pressable>
+                  <DotsToggle hidden={!!tag.hideDots} onPress={() => setTagHideDots(tag.id, !tag.hideDots)} />
                   <Pressable hitSlop={6} style={styles.smallBtn} onPress={() => setPrompt({ title: `New sub-tag in "${tag.name}"`, initial: '', submitLabel: 'Add', onSubmit: (t) => addTag(t, tag.id) })}>
                     <Text style={styles.smallBtnTxt}>＋ sub</Text>
                   </Pressable>
@@ -210,23 +218,36 @@ export function SettingsScreen({
                 </View>
                 {subtagsOf(tag.id).length > 0 && (
                   <View style={styles.subWrap}>
-                    {subtagsOf(tag.id).map((st) => (
-                      <View key={st.id} style={styles.subChip}>
-                        <Pressable onPress={() => setPrompt({ title: 'Rename sub-tag', initial: st.name, submitLabel: 'Save', onSubmit: (t) => renameTag(st.id, t) })}>
-                          <Text style={styles.subChipTxt}>{st.name}</Text>
-                        </Pressable>
-                        <Pressable hitSlop={8} onPress={() => confirm('Delete', `Delete sub-tag "${st.name}"?`, () => deleteTag(st.id))}>
-                          <Feather name="x" size={13} color={C.faint} />
-                        </Pressable>
-                      </View>
-                    ))}
+                    {subtagsOf(tag.id).map((st) => {
+                      const inherited = !!tag.hideDots;
+                      const hidden = inherited || !!st.hideDots;
+                      return (
+                        <View key={st.id} style={styles.subChip}>
+                          <Pressable onPress={() => setPrompt({ title: 'Rename sub-tag', initial: st.name, submitLabel: 'Save', onSubmit: (t) => renameTag(st.id, t) })}>
+                            <Text style={[styles.subChipTxt, hidden && styles.nameHidden]}>{st.name}</Text>
+                          </Pressable>
+                          <Pressable hitSlop={8} disabled={inherited} onPress={() => setTagHideDots(st.id, !st.hideDots)} style={inherited ? { opacity: 0.45 } : undefined}>
+                            <Feather name={hidden ? 'eye-off' : 'eye'} size={13} color={hidden ? C.faint : C.textDim} />
+                          </Pressable>
+                          <Pressable hitSlop={8} onPress={() => confirm('Delete', `Delete sub-tag "${st.name}"?`, () => deleteTag(st.id))}>
+                            <Feather name="x" size={13} color={C.faint} />
+                          </Pressable>
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
-              </View>
+              </Appear>
             ))}
             <Pressable style={styles.addBtn} onPress={() => setPrompt({ title: 'New tag', initial: '', submitLabel: 'Add', onSubmit: (t) => addTag(t, null) })}>
               <Text style={styles.addBtnTxt}>＋ New tag</Text>
             </Pressable>
+            <View style={styles.legend}>
+              <Feather name="eye" size={13} color={C.muted} />
+              <Text style={styles.legendTxt}>
+                The eye controls whether a tag's tasks appear as dots under the days in the week strip. Hiding a tag hides its sub-tags' tasks too.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -404,52 +425,122 @@ export function SettingsScreen({
         onClose={() => setPlaceEdit(null)}
       />
 
-      <CenterPopup open={colorAdd} onClose={() => setColorAdd(false)}>
-        <Text style={styles.colorTitle}>New color</Text>
+      {/* Edit one palette slot (a colour picked that's already in another slot swaps the two) */}
+      <CenterPopup open={slotEdit?.kind === 'color'} onClose={() => setSlotEdit(null)}>
+        <Text style={styles.colorTitle}>Palette color {slotEdit ? slotEdit.index + 1 : ''}</Text>
         <CustomColorGrid value={tempColor} onPick={setTempColor} />
-        <Pressable
-          style={styles.addBtn}
-          onPress={() => {
-            if (!settings.colors.includes(tempColor)) updateSettings({ colors: [...settings.colors, tempColor] });
-            setColorAdd(false);
-          }}>
-          <Text style={styles.addBtnTxt}>Add color</Text>
-        </Pressable>
-      </CenterPopup>
-
-      <CenterPopup open={iconAdd} onClose={() => setIconAdd(false)}>
-        <Text style={styles.colorTitle}>New icon</Text>
-        <CustomIconInput value={tempIcon} onChange={setTempIcon} />
-        <Pressable
-          style={[styles.addBtn, { marginTop: 16 }]}
-          onPress={() => {
-            const v = tempIcon.trim();
-            if (v && !settings.emojis.includes(v)) updateSettings({ emojis: [...settings.emojis, v] });
-            setIconAdd(false);
-          }}>
-          <Text style={styles.addBtnTxt}>Add icon</Text>
-        </Pressable>
-      </CenterPopup>
-
-      <CenterPopup open={colorPick != null} onClose={() => setColorPick(null)}>
-        <Text style={styles.colorTitle}>Tag color</Text>
-        <View style={styles.colorWrap}>
-          {COLORS.map((c) => {
-            const on = settings.tags.find((t) => t.id === colorPick)?.color === c;
-            return (
-              <Pressable
-                key={c}
-                onPress={() => {
-                  if (colorPick) setTagColor(colorPick, c);
-                  setColorPick(null);
-                }}
-                style={[styles.colorSwatch, { backgroundColor: c, boxShadow: on ? `0 0 0 3px ${C.sheet}, 0 0 0 5px ${c}` : undefined }]}
-              />
-            );
-          })}
+        <View style={styles.popBtns}>
+          <Pressable style={styles.popCancel} onPress={() => setSlotEdit(null)}>
+            <Text style={styles.popCancelTxt}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            style={styles.popSave}
+            onPress={() => {
+              if (slotEdit) updateSettings({ colors: replaceSlot(settings.colors, slotEdit.index, tempColor) });
+              setSlotEdit(null);
+            }}>
+            <Text style={styles.popSaveTxt}>Save</Text>
+          </Pressable>
         </View>
       </CenterPopup>
+
+      <CenterPopup open={slotEdit?.kind === 'icon'} onClose={() => setSlotEdit(null)}>
+        <Text style={styles.colorTitle}>Icon {slotEdit ? slotEdit.index + 1 : ''}</Text>
+        <CustomIconInput value={tempIcon} onChange={setTempIcon} />
+        <Text style={styles.hint}>Type or paste any emoji, or up to two letters.</Text>
+        <View style={styles.popBtns}>
+          <Pressable style={styles.popCancel} onPress={() => setSlotEdit(null)}>
+            <Text style={styles.popCancelTxt}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            disabled={!tempIcon.trim()}
+            style={[styles.popSave, !tempIcon.trim() && { opacity: 0.4 }]}
+            onPress={() => {
+              const v = tempIcon.trim();
+              if (slotEdit && v) updateSettings({ emojis: replaceSlot(settings.emojis, slotEdit.index, v) });
+              setSlotEdit(null);
+            }}>
+            <Text style={styles.popSaveTxt}>Save</Text>
+          </Pressable>
+        </View>
+      </CenterPopup>
+
+      {/* Tag colour: the palette row (+ custom), same as a task's picker */}
+      <CenterPopup open={colorPick != null} onClose={() => setColorPick(null)}>
+        {tagColorPage === 'main' ? (
+          <Appear key="main" from="left" distance={14}>
+            <Text style={styles.colorTitle}>Tag color</Text>
+            <PaletteRow
+              colors={settings.colors}
+              value={pickedTag?.color ?? COLORS[0]}
+              onPick={(c) => {
+                if (colorPick) setTagColor(colorPick, c);
+                setTimeout(() => setColorPick(null), 240); // let the ring land first
+              }}
+              onCustom={() => setTagColorPage('custom')}
+            />
+            <Pressable style={styles.popDone} onPress={() => setColorPick(null)}>
+              <Text style={styles.popCancelTxt}>Done</Text>
+            </Pressable>
+          </Appear>
+        ) : (
+          <Appear key="custom" from="right" distance={14}>
+            <View style={styles.popHead}>
+              <Pressable hitSlop={8} style={styles.popBack} onPress={() => setTagColorPage('main')}>
+                <Feather name="chevron-left" size={20} color={C.textDim} />
+              </Pressable>
+              <Text style={[styles.colorTitle, { marginBottom: 0 }]}>Custom color</Text>
+            </View>
+            <CustomColorGrid value={pickedTag?.color ?? COLORS[0]} onPick={(c) => colorPick && setTagColor(colorPick, c)} />
+            <Pressable style={styles.popDone} onPress={() => setColorPick(null)}>
+              <Text style={styles.popCancelTxt}>Done</Text>
+            </Pressable>
+          </Appear>
+        )}
+      </CenterPopup>
     </View>
+  );
+}
+
+// Put `v` into slot `index`; if it already sits in another slot, the two swap
+// (so the palette / icon set never holds duplicates).
+function replaceSlot(list: string[], index: number, v: string): string[] {
+  const old = list[index];
+  const dup = list.findIndex((x, i) => i !== index && x.toLowerCase() === v.toLowerCase());
+  return list.map((x, i) => (i === index ? v : i === dup ? old : x));
+}
+
+// The last cell of a slot grid: restores the defaults.
+function ResetTile({ size, round, delay, onPress }: { size: number; round?: boolean; delay: number; onPress: () => void }) {
+  return (
+    <Appear delay={delay}>
+      <Tappable onPress={onPress} scaleTo={0.86} style={[styles.resetTile, { width: size, height: size, borderRadius: round ? size / 2 : Math.round(size * 0.3) }]}>
+        <Feather name="rotate-ccw" size={Math.round(size * 0.38)} color={C.muted} />
+      </Tappable>
+    </Appear>
+  );
+}
+
+// Eye toggle: are this tag's tasks shown as dots in the week strip?
+function DotsToggle({ hidden, onPress }: { hidden: boolean; onPress: () => void }) {
+  const v = useSharedValue(hidden ? 1 : 0);
+  const pop = useSharedValue(1);
+  useEffect(() => {
+    v.value = withSpring(hidden ? 1 : 0, { damping: 16, stiffness: 240 });
+    pop.value = 0.8;
+    pop.value = withSpring(1, { damping: 10, stiffness: 320 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hidden]);
+  const bg = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(v.value, [0, 1], ['rgba(79,209,197,0.12)', 'rgba(255,255,255,0.04)']) }));
+  const icon = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
+  return (
+    <Tappable hitSlop={6} onPress={onPress}>
+      <Animated.View style={[styles.eyeBtn, bg]}>
+        <Animated.View style={icon}>
+          <Feather name={hidden ? 'eye-off' : 'eye'} size={16} color={hidden ? C.faint : C.accentB} />
+        </Animated.View>
+      </Animated.View>
+    </Tappable>
   );
 }
 
@@ -497,8 +588,6 @@ const styles = StyleSheet.create({
   tagSwatch: { width: 34, height: 34, borderRadius: 10 },
   manageName: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
   colorTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 16 },
-  colorWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
-  colorSwatch: { width: 38, height: 38, borderRadius: 19 },
   placeName: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   manageNameTxt: { fontSize: 15, fontWeight: '600', color: C.text },
   smallBtn: { paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)' },
@@ -520,13 +609,20 @@ const styles = StyleSheet.create({
   placeMeta: { fontSize: 12, color: C.muted, flex: 1 },
   emptyHint: { color: C.faint, fontSize: 13, paddingVertical: 14, textAlign: 'center' },
   presetNote: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 16 },
-  paletteWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
-  paletteItem: { position: 'relative' },
-  paletteSwatch: { width: 38, height: 38, borderRadius: 19 },
-  iconItem: { position: 'relative', width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
-  iconItemTxt: { fontSize: 20 },
-  paletteX: { position: 'absolute', top: -4, right: -4, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(30,31,35,0.95)', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.15)' },
-  paletteAdd: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(124,124,240,0.12)', alignItems: 'center', justifyContent: 'center' },
+  slotCard: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 16, paddingVertical: 12, paddingHorizontal: 6, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.05)' },
+  resetTile: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.14)' },
+  eyeBtn: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  nameHidden: { color: C.muted },
+  legend: { flexDirection: 'row', gap: 8, marginTop: 16, paddingHorizontal: 4 },
+  legendTxt: { flex: 1, fontSize: 12, color: C.muted, lineHeight: 17 },
+  popBtns: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  popCancel: { flex: 1, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
+  popCancelTxt: { fontSize: 15, fontWeight: '700', color: C.text },
+  popSave: { flex: 1, height: 48, borderRadius: 14, backgroundColor: C.accentB, alignItems: 'center', justifyContent: 'center' },
+  popSaveTxt: { fontSize: 15, fontWeight: '700', color: '#0b0b0d' },
+  popDone: { height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
+  popHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14, marginLeft: -6 },
+  popBack: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   presetWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   presetChip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
   presetTxt: { fontSize: 13, fontWeight: '600', color: C.textDim, fontVariant: ['tabular-nums'] },

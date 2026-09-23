@@ -76,7 +76,7 @@ export function StatsScreen({
     });
     const rows = tags
       .filter((t) => t.parentId == null && (sums.get(t.id) || 0) > 0)
-      .map((t, i) => ({ name: t.name, mins: sums.get(t.id) || 0, color: COLORS[i % COLORS.length] }));
+      .map((t, i) => ({ name: t.name, mins: sums.get(t.id) || 0, color: t.color || COLORS[i % COLORS.length] }));
     if (untagged > 0) rows.push({ name: 'Untagged', mins: untagged, color: C.faint });
     return rows.sort((a, b) => b.mins - a.mins);
   }, [rangeTasks, settings.tags]);

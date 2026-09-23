@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInDown, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { C, COLORS, EMOJIS, ICON_SLOTS, PALETTE_SLOTS } from '../theme';
 import { Tag } from '../types';
@@ -226,8 +226,9 @@ export function SettingsScreen({
                           <Pressable onPress={() => setPrompt({ title: 'Rename sub-tag', initial: st.name, submitLabel: 'Save', onSubmit: (t) => renameTag(st.id, t) })}>
                             <Text style={[styles.subChipTxt, hidden && styles.nameHidden]}>{st.name}</Text>
                           </Pressable>
-                          <Pressable hitSlop={8} disabled={inherited} onPress={() => setTagHideDots(st.id, !st.hideDots)} style={inherited ? { opacity: 0.45 } : undefined}>
-                            <Feather name={hidden ? 'eye-off' : 'eye'} size={13} color={hidden ? C.faint : C.textDim} />
+                          {/* Inherited from a hidden parent: shown extra-faint and locked. */}
+                          <Pressable hitSlop={8} disabled={inherited} onPress={() => setTagHideDots(st.id, !st.hideDots)}>
+                            <Feather name={hidden ? 'eye-off' : 'eye'} size={13} color={inherited ? 'rgba(255,255,255,0.2)' : hidden ? C.faint : C.accentB} />
                           </Pressable>
                           <Pressable hitSlop={8} onPress={() => confirm('Delete', `Delete sub-tag "${st.name}"?`, () => deleteTag(st.id))}>
                             <Feather name="x" size={13} color={C.faint} />
@@ -265,9 +266,10 @@ export function SettingsScreen({
               })}
             </ScrollView>
 
-            <Animated.View key={`pl-${placeTab ?? 'x'}`} entering={FadeInDown.duration(240).springify().damping(18)}>
-              {settings.places.filter((pl) => (pl.tagId ?? null) === placeTab).map((pl) => (
-                <Pressable key={pl.id} style={styles.placeRow} onPress={() => setPlaceEdit(pl.id)}>
+            <View key={`pl-${placeTab ?? 'x'}`}>
+              {settings.places.filter((pl) => (pl.tagId ?? null) === placeTab).map((pl, pi) => (
+                <Appear key={pl.id} from="up" delay={30 + pi * 40}>
+                <Pressable style={styles.placeRow} onPress={() => setPlaceEdit(pl.id)}>
                   {pl.photoUri ? (
                     <Image source={{ uri: pl.photoUri }} style={styles.placeThumb} />
                   ) : (
@@ -286,14 +288,17 @@ export function SettingsScreen({
                   </View>
                   <Feather name="chevron-right" size={20} color={C.muted} />
                 </Pressable>
+                </Appear>
               ))}
               {settings.places.filter((pl) => (pl.tagId ?? null) === placeTab).length === 0 && (
-                <Text style={styles.emptyHint}>No places here yet.</Text>
+                <Appear from="up">
+                  <Text style={styles.emptyHint}>No places here yet.</Text>
+                </Appear>
               )}
               <Pressable style={styles.addBtn} onPress={() => setPrompt({ title: 'New place', initial: '', submitLabel: 'Add', onSubmit: (t) => addPlace(t, placeTab) })}>
                 <Text style={styles.addBtnTxt}>＋ New place</Text>
               </Pressable>
-            </Animated.View>
+            </View>
           </View>
         )}
 
@@ -311,7 +316,7 @@ export function SettingsScreen({
               })}
             </ScrollView>
 
-            <Animated.View key={`ps-${presetTab ?? 'x'}`} entering={FadeInDown.duration(240).springify().damping(18)}>
+            <Appear key={`ps-${presetTab ?? 'x'}`} from="up" distance={10}>
               <Text style={styles.section}>{presetTab ? 'TIME PRESETS · TAG' : 'TIME PRESETS · GLOBAL'}</Text>
               <View style={styles.presetWrap}>
                 {settings.timePresets.filter((p) => (p.tagId ?? null) === presetTab).map((p, i) => (
@@ -345,7 +350,7 @@ export function SettingsScreen({
               <Text style={styles.presetNote}>
                 {presetTab ? 'These appear only for tasks with this tag (in addition to global presets).' : 'These appear for every task. Pick a tag tab to add tag-specific presets.'}
               </Text>
-            </Animated.View>
+            </Appear>
           </View>
         )}
 

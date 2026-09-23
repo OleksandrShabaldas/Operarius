@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, PressableProps, StyleProp, ViewStyle } from 'react-native';
+import { Pressable, PressableProps, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   FadeInDown,
@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -35,7 +36,15 @@ export function Tappable({
 }) {
   const s = useSharedValue(1);
   const o = useSharedValue(1);
-  const aStyle = useAnimatedStyle(() => ({ transform: [{ scale: s.value }], opacity: o.value }));
+  // A static opacity in `style` (e.g. a dimmed/disabled control) is kept and
+  // the press dim multiplies it — otherwise the animated opacity would win.
+  const baseOpacity = (StyleSheet.flatten(style)?.opacity as number | undefined) ?? 1;
+  const base = useSharedValue(baseOpacity);
+  useEffect(() => {
+    base.value = withTiming(baseOpacity, { duration: 180 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseOpacity]);
+  const aStyle = useAnimatedStyle(() => ({ transform: [{ scale: s.value }], opacity: o.value * base.value }));
   return (
     <AnimatedPressable
       onPress={onPress}

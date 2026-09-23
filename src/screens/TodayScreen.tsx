@@ -95,6 +95,8 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
     setSelectedKey(key);
   }, [setSelectedKey]);
   const changeDay = (delta: number) => go(addDays(selectedKey, delta), 'swipe');
+  const onSelectDay = useCallback((key: string) => go(key, 'tap'), [go]);
+  const onPageWeek = useCallback((delta: number) => go(addDays(selectedKey, delta * 7), 'week'), [go, selectedKey]);
   const daySwipe = Gesture.Pan()
     .activeOffsetX([-24, 24])
     .failOffsetY([-18, 18])
@@ -324,8 +326,8 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           selectedKey={selectedKey}
           weekStart={settings.weekStart}
           dotsFor={dotsFor}
-          onSelect={(key) => go(key, 'tap')}
-          onPageWeek={(delta) => go(addDays(selectedKey, delta * 7), 'week')}
+          onSelect={onSelectDay}
+          onPageWeek={onPageWeek}
         />
       </View>
 

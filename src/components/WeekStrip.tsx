@@ -68,7 +68,8 @@ const daysBetween = (a: string, b: string) => Math.round((dateFromKey(b).getTime
 
 // A native horizontal pager of weeks: the strip itself follows the finger and
 // snaps to the neighbouring week (only the strip moves — not the whole screen).
-export function WeekStrip({ selectedKey, weekStart, dotsFor, onSelect, onPageWeek }: Props) {
+// Memoized: the Today screen re-renders on every drag step, the strip needn't.
+export const WeekStrip = React.memo(function WeekStrip({ selectedKey, weekStart, dotsFor, onSelect, onPageWeek }: Props) {
   const [w, setW] = useState(0);
   const letters = weekdayLetters(weekStart);
   const today = todayKey();
@@ -110,6 +111,8 @@ export function WeekStrip({ selectedKey, weekStart, dotsFor, onSelect, onPageWee
     if (quiet.current) clearTimeout(quiet.current);
   }, []);
 
+  const extra = useMemo(() => [selectedKey, dotsFor, w, onSelect], [selectedKey, dotsFor, w, onSelect]);
+
   const renderWeek = ({ item }: { item: number }) => {
     const start = addDays(anchor, (item - WEEKS) * 7);
     const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
@@ -119,7 +122,7 @@ export function WeekStrip({ selectedKey, weekStart, dotsFor, onSelect, onPageWee
           const selected = key === selectedKey;
           const isToday = key === today;
           return (
-            <Pressable key={key} onPress={() => onSelect(key)} style={[styles.cell, selected && styles.cellSelected]}>
+            <Pressable key={key} onPress={() => onSelect(key)} style={[styles.cell, selected ? styles.cellSelected : styles.cellIdle]}>
               {selected && (
                 <LinearGradient colors={['rgba(124,124,240,0.28)', 'rgba(79,209,197,0.14)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
               )}
@@ -146,7 +149,7 @@ export function WeekStrip({ selectedKey, weekStart, dotsFor, onSelect, onPageWee
           data={data}
           keyExtractor={(i) => String(i)}
           renderItem={renderWeek}
-          extraData={[selectedKey, dotsFor, w]}
+          extraData={extra}
           getItemLayout={(_, i) => ({ length: w, offset: w * i, index: i })}
           initialScrollIndex={index}
           onMomentumScrollEnd={onMomentumEnd}
@@ -161,13 +164,16 @@ export function WeekStrip({ selectedKey, weekStart, dotsFor, onSelect, onPageWee
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrap: { marginTop: 14 },
   row: { flexDirection: 'row', gap: 4 },
   cell: { flex: 1, alignItems: 'center', paddingTop: 8, paddingBottom: 7, borderRadius: 14, overflow: 'hidden', position: 'relative' },
   cellSelected: { boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08), 0 6px 18px -8px rgba(124,124,240,0.6)' },
+  // Same shadow shape, fully transparent: Android keeps a removed boxShadow,
+  // so the idle state sets one explicitly instead of dropping the prop.
+  cellIdle: { boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0), 0 6px 18px -8px rgba(124,124,240,0)' },
   dow: { fontSize: 11, fontWeight: '600', opacity: 0.6 },
   num: { fontSize: 16, fontWeight: '600', marginTop: 3 },
   dotsWrap: { marginTop: 5 },

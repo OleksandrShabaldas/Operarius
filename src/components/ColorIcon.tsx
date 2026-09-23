@@ -393,7 +393,8 @@ const styles = StyleSheet.create({
   gridRing: { position: 'absolute', left: 0, top: 0, borderRadius: 5, borderWidth: 2.5, borderColor: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,0.35), 0 4px 10px rgba(0,0,0,0.45)' },
   hexRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
   hexLabel: { fontSize: 12, fontWeight: '700', color: C.muted },
-  hexInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, color: C.text, fontSize: 15, fontVariant: ['tabular-nums'] },
+  // Transparent rim by default so the error rim below is replaced, not left behind.
+  hexInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, color: C.text, fontSize: 15, fontVariant: ['tabular-nums'], boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0)' },
   hexBad: { boxShadow: `inset 0 0 0 1px ${C.danger}` },
   iconWrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconPreview: { width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },

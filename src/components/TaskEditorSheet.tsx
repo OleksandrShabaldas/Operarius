@@ -1,17 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Clock, Draft, Place, Preset, Tag, TaskType } from '../types';
 import { dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, todayKey } from '../utils';
-import { CustomColorGrid, CustomIconInput } from './ColorIcon';
+import { CustomColorGrid, CustomIconInput, IconGrid, PaletteRow } from './ColorIcon';
 import { PlaceIcon } from './PlaceIcon';
-import { DatePickerPopup, DurationPickerPopup, SelectPopup, TimePickerPopup } from './pickers';
+import { DatePickerPopup, DurationPickerPopup, Neighbor, SelectPopup, TimePickerPopup } from './pickers';
 import { RepeatPopup } from './RepeatPopup';
 import { PlaceSelectPopup } from './PlaceSelectPopup';
 import { BottomSheet, CenterPopup } from './Overlay';
-import { Tappable } from './anim';
+import { Appear, Tappable } from './anim';
 
 type Props = {
   draft: Draft | null;
@@ -23,7 +24,9 @@ type Props = {
   durationPresets: Preset[];
   colors: string[];
   emojis: string[];
-  siblings?: { start: number; dur: number }[]; // other planned tasks on the same day (for dynamic durations)
+  siblings?: { start: number; dur: number; title: string; color: string }[]; // other planned tasks on the same day (for dynamic durations)
+  dayStart?: number; // visible day window — the fallback anchors for dynamic durations
+  dayEnd?: number;
   autoPickDate?: boolean; // open straight into the date picker (used when copying)
   onPatch: (patch: Partial<Draft>) => void;
   onSave: () => void;
@@ -50,6 +53,8 @@ export function TaskEditorSheet({
   colors,
   emojis,
   siblings,
+  dayStart = 0,
+  dayEnd = 24 * 60,
   autoPickDate,
   onPatch,
   onSave,
@@ -99,15 +104,19 @@ export function TaskEditorSheet({
   const tDur = topTagId ? durationPresets.filter((p) => p.tagId === topTagId).map((p) => p.value) : [];
 
   // Nearest neighbours on the same day, for the dynamic duration options.
+  // "Previous" = the latest-ending task that starts before this one and ends
+  // before this one does (so a long block this task sits inside isn't it);
+  // "next" = the earliest task starting after this one.
   const startMin = d?.start ?? 0;
-  let prevEnd: number | null = null;
-  let nextStart: number | null = null;
+  const endMin = startMin + (d?.dur ?? 0);
+  let prev: Neighbor | null = null;
+  let next: Neighbor | null = null;
   for (const sb of siblings ?? []) {
-    if (sb.start < startMin) {
-      const e = sb.start + sb.dur;
-      if (prevEnd == null || e > prevEnd) prevEnd = e;
+    const e = sb.start + sb.dur;
+    if (sb.start < startMin && e <= endMin) {
+      if (!prev || e > prev.end) prev = { title: sb.title, start: sb.start, end: e, color: sb.color };
     } else if (sb.start > startMin) {
-      if (nextStart == null || sb.start < nextStart) nextStart = sb.start;
+      if (!next || sb.start < next.start) next = { title: sb.title, start: sb.start, end: e, color: sb.color };
     }
   }
 
@@ -289,67 +298,44 @@ export function TaskEditorSheet({
         )}
       </BottomSheet>
 
-      {/* Icon + color picker */}
+      {/* Icon + color picker: one full row of colours, two full rows of icons */}
       <CenterPopup open={picker === 'icon'} onClose={() => setPicker(null)}>
         {d && iconPage === 'main' && (
-          <>
+          <Appear key="main" from="left" distance={16}>
             <Text style={styles.pickerTitle}>Icon &amp; color</Text>
             <View style={styles.previewRow}>
-              <LinearGradient colors={[d.color, hexA(d.color, 0.75)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.preview}>
-                <Text style={styles.previewTxt}>{d.emoji}</Text>
-              </LinearGradient>
+              <MarkerPreview color={d.color} emoji={d.emoji} />
+              <Text style={styles.previewName} numberOfLines={1}>
+                {d.title.trim() || 'New task'}
+              </Text>
             </View>
             <Text style={styles.pickerSection}>COLOR</Text>
-            <View style={styles.wrapRow}>
-              {colors.map((c) => (
-                <Tappable
-                  key={c}
-                  onPress={() => onPatch({ color: c })}
-                  style={[styles.swatch, { backgroundColor: c, boxShadow: d.color === c ? `0 0 0 3px ${C.sheet}, 0 0 0 5px ${c}` : undefined }]}
-                />
-              ))}
-              <Tappable onPress={() => setIconPage('color')} style={styles.customSwatch}>
-                <LinearGradient colors={['#F8677A', '#F2C14E', '#5FD08A', '#5B9DF9', '#B57CF0']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.customSwatchFill}>
-                  <Feather name="plus" size={15} color="#0b0b0d" />
-                </LinearGradient>
-              </Tappable>
-            </View>
-            <Text style={styles.pickerSection}>ICON</Text>
-            <View style={styles.wrapRow}>
-              {emojis.map((ch) => (
-                <Tappable
-                  key={ch}
-                  onPress={() => onPatch({ emoji: ch })}
-                  style={[styles.emoji, { backgroundColor: d.emoji === ch ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)', boxShadow: d.emoji === ch ? 'inset 0 0 0 1.5px rgba(255,255,255,0.4)' : undefined }]}>
-                  <Text style={styles.emojiTxt}>{ch}</Text>
-                </Tappable>
-              ))}
-              <Tappable onPress={() => setIconPage('icon')} style={[styles.emoji, styles.customEmoji]}>
-                <Feather name="edit-3" size={16} color={C.accentB} />
-              </Tappable>
-            </View>
-            <Tappable onPress={() => setPicker(null)} style={styles.pickerDone}>
+            <PaletteRow colors={colors} value={d.color} onPick={(c) => onPatch({ color: c })} onCustom={() => setIconPage('color')} />
+            <Text style={[styles.pickerSection, { marginTop: 18 }]}>ICON</Text>
+            <IconGrid icons={emojis} value={d.emoji} onPick={(e) => onPatch({ emoji: e })} onCustom={() => setIconPage('icon')} />
+            <Tappable onPress={() => setPicker(null)} style={[styles.pickerDone, { marginTop: 18 }]}>
               <Text style={styles.pickerDoneTxt}>Done</Text>
             </Tappable>
-          </>
+          </Appear>
         )}
         {d && iconPage === 'color' && (
-          <>
-            <Text style={styles.pickerTitle}>Custom color</Text>
+          <Appear key="color" from="right" distance={16}>
+            <PageHead title="Custom color" onBack={() => setIconPage('main')} />
             <CustomColorGrid value={d.color} onPick={(hex) => onPatch({ color: hex })} />
             <Tappable onPress={() => setIconPage('main')} style={styles.pickerDone}>
               <Text style={styles.pickerDoneTxt}>Done</Text>
             </Tappable>
-          </>
+          </Appear>
         )}
         {d && iconPage === 'icon' && (
-          <>
-            <Text style={styles.pickerTitle}>Custom icon</Text>
+          <Appear key="icon" from="right" distance={16}>
+            <PageHead title="Custom icon" onBack={() => setIconPage('main')} />
             <CustomIconInput value={d.emoji} onChange={(v) => onPatch({ emoji: v })} />
+            <Text style={styles.pickerHint}>Type or paste any emoji, or up to two letters.</Text>
             <Tappable onPress={() => setIconPage('main')} style={styles.pickerDone}>
               <Text style={styles.pickerDoneTxt}>Done</Text>
             </Tappable>
-          </>
+          </Appear>
         )}
       </CenterPopup>
 
@@ -361,9 +347,13 @@ export function TaskEditorSheet({
         presets={gDur}
         tagPresets={tDur}
         tagName={topTagName}
+        dynamic
         start={startMin}
-        prevEnd={prevEnd}
-        nextStart={nextStart}
+        clock={clock}
+        prev={prev}
+        next={next}
+        dayStart={dayStart}
+        dayEnd={dayEnd}
         onChange={(v) => onPatch({ dur: v })}
         onApplyRange={(st, du) => onPatch({ start: st, dur: du })}
         onClose={() => setPicker(null)}
@@ -373,6 +363,35 @@ export function TaskEditorSheet({
       <PlaceSelectPopup visible={picker === 'place'} places={places} tags={tags} selectedId={d?.placeId ?? null} taskTagId={d?.tagId ?? null} onSelect={(id) => onPatch({ placeId: id })} onClose={() => setPicker(null)} />
       <RepeatPopup visible={picker === 'repeat'} repeat={d?.repeat ?? null} baseDate={d?.date || todayKey()} weekStart={weekStart} onChange={(r) => onPatch({ repeat: r })} onClose={() => setPicker(null)} />
     </>
+  );
+}
+
+// The task marker as it will look on the card; springs a little on each change.
+function MarkerPreview({ color, emoji }: { color: string; emoji: string }) {
+  const s = useSharedValue(1);
+  useEffect(() => {
+    s.value = 0.86;
+    s.value = withSpring(1, { damping: 10, stiffness: 300 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [color, emoji]);
+  const a = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
+  return (
+    <Animated.View style={[styles.previewShadow, { boxShadow: `0 10px 24px -8px ${hexA(color, 0.75)}` }, a]}>
+      <LinearGradient colors={[color, hexA(color, 0.75)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.preview}>
+        <Text style={styles.previewTxt}>{emoji}</Text>
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
+function PageHead({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <View style={styles.pageHead}>
+      <Tappable onPress={onBack} hitSlop={8} style={styles.pageBack}>
+        <Feather name="chevron-left" size={20} color={C.textDim} />
+      </Tappable>
+      <Text style={[styles.pickerTitle, { marginBottom: 0 }]}>{title}</Text>
+    </View>
   );
 }
 
@@ -466,17 +485,15 @@ const styles = StyleSheet.create({
   saveTxt: { fontSize: 16, fontWeight: '700', color: '#0b0b0d' },
 
   pickerTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 14 },
-  pickerSection: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 12, marginBottom: 9 },
-  previewRow: { alignItems: 'center', marginBottom: 12 },
-  preview: { width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  previewTxt: { fontSize: 28 },
-  wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  swatch: { width: 32, height: 32, borderRadius: 16, marginVertical: 2, marginHorizontal: 1 },
-  customSwatch: { width: 32, height: 32, borderRadius: 16, marginVertical: 2, marginHorizontal: 1, overflow: 'hidden' },
-  customSwatchFill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emoji: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  customEmoji: { backgroundColor: 'rgba(79,209,197,0.12)' },
-  emojiTxt: { fontSize: 18 },
-  pickerDone: { height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  pickerSection: { fontSize: 11, color: C.muted, fontWeight: '700', letterSpacing: 0.5, marginTop: 4, marginBottom: 10 },
+  pickerHint: { fontSize: 12, color: C.muted, marginTop: 12, lineHeight: 17 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18, paddingHorizontal: 2 },
+  previewShadow: { borderRadius: 18 },
+  preview: { width: 58, height: 58, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  previewTxt: { fontSize: 27 },
+  previewName: { flex: 1, fontSize: 16, fontWeight: '700', color: C.textDim },
+  pageHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14, marginLeft: -6 },
+  pageBack: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  pickerDone: { height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   pickerDoneTxt: { fontSize: 15, fontWeight: '700', color: C.text },
 });

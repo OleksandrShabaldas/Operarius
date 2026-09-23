@@ -302,7 +302,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
     chev.value = withSpring(monthOpen ? 1 : 0, sp({ damping: 16, stiffness: 240 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monthOpen]);
-  const chevStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `deg` }] }));
+  const chevStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${chev.value * 180}deg` }] }));
   const closeMonth = useCallback(() => setMonthOpen(false), []);
   const pickFromMonth = useCallback(
     (key: string) => {

@@ -12,6 +12,7 @@ import {
   LEGACY_COLORS,
   PALETTE_SLOTS,
 } from './theme';
+import { coordsFromText } from './maps';
 
 // ---------------------------------------------------------------------------
 // Persistence layer.
@@ -36,8 +37,8 @@ export const DEFAULT_TAGS: Tag[] = [
 ];
 
 export const DEFAULT_PLACES: Place[] = [
-  { id: 'home', name: 'Home', tagId: null, link: '', photoUri: null },
-  { id: 'office', name: 'Office', tagId: 'work', link: '', photoUri: null },
+  { id: 'home', name: 'Home', tagId: null, link: '', photoUri: null, lat: null, lng: null, address: '' },
+  { id: 'office', name: 'Office', tagId: 'work', link: '', photoUri: null, lat: null, lng: null, address: '' },
 ];
 
 const toPresets = (vals: number[]): { value: number; tagId: string | null }[] =>
@@ -56,6 +57,8 @@ export const DEFAULT_SETTINGS: Settings = {
   colors: [...COLORS],
   emojis: [...EMOJIS],
   swapOnDrag: false,
+  animations: true,
+  animScale: 1,
 };
 
 // The palette / icon set always hold exactly `n` distinct entries (so pickers
@@ -79,12 +82,19 @@ function migratePresets(raw: any, fallback: { value: number; tagId: string | nul
 }
 
 function migratePlace(raw: any): Place {
+  const link = typeof raw.link === 'string' ? raw.link : '';
+  const num = (v: any) => (typeof v === 'number' && isFinite(v) ? v : null);
+  // Older builds only stored a link; recover coordinates from it when it has them.
+  const fromLink = num(raw.lat) == null ? coordsFromText(link) : null;
   return {
     id: String(raw.id),
     name: raw.name ?? 'Place',
     tagId: typeof raw.tagId === 'string' ? raw.tagId : null,
-    link: typeof raw.link === 'string' ? raw.link : '',
+    link,
     photoUri: typeof raw.photoUri === 'string' ? raw.photoUri : null,
+    lat: num(raw.lat) ?? fromLink?.lat ?? null,
+    lng: num(raw.lng) ?? fromLink?.lng ?? null,
+    address: typeof raw.address === 'string' ? raw.address : '',
   };
 }
 
@@ -176,6 +186,8 @@ export const localRepository: Repository = {
         colors: sameList(parsed.colors, LEGACY_COLORS) ? [...COLORS] : fitSlots(parsed.colors, COLORS, PALETTE_SLOTS),
         emojis: fitSlots(parsed.emojis, EMOJIS, ICON_SLOTS),
         swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
+        animations: typeof parsed.animations === 'boolean' ? parsed.animations : true,
+        animScale: typeof parsed.animScale === 'number' && parsed.animScale >= 0.5 && parsed.animScale <= 4 ? parsed.animScale : 1,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };

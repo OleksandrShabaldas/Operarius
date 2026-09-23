@@ -4,25 +4,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { C, COLORS, EMOJIS, ICON_SLOTS, PALETTE_SLOTS } from '../theme';
+import { sp } from '../motion';
 import { Tag } from '../types';
 import { useApp } from '../store';
-import { fmt, fmtDur } from '../utils';
+import { fmt, fmtDur, hexA } from '../utils';
+import { fmtCoords, hasLocation } from '../maps';
+import { fmtScale, MotionPreview, ScaleSlider, Toggle } from '../components/MotionSettings';
 import { TextPromptModal } from '../components/TextPromptModal';
 import { PlaceIcon } from '../components/PlaceIcon';
 import { PlaceEditorPopup } from '../components/PlaceEditorPopup';
-import { ColorSwatch, CustomColorGrid, CustomIconInput, IconCell, PaletteRow, SlotGrid } from '../components/ColorIcon';
+import { ColorSwatch, CustomColorGrid, CustomIconInput, IconCell, IconGrid, PaletteRow, SlotGrid } from '../components/ColorIcon';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
 import { CenterPopup } from '../components/Overlay';
 import { Appear, Tappable } from '../components/anim';
 
 const Pressable = Tappable; // every tappable control gets press feedback
 
-type Category = 'general' | 'appearance' | 'tags' | 'places' | 'presets' | 'data' | 'about';
+type Category = 'general' | 'appearance' | 'motion' | 'tags' | 'places' | 'presets' | 'data' | 'about';
 type Prompt = { title: string; initial: string; submitLabel: string; onSubmit: (t: string) => void };
 
 const CATS: { id: Category; label: string; icon: keyof typeof Feather.glyphMap; sub: string }[] = [
   { id: 'general', label: 'General', icon: 'sliders', sub: 'Day window, week start, gaps' },
   { id: 'appearance', label: 'Appearance', icon: 'droplet', sub: 'Time format, colors & icons' },
+  { id: 'motion', label: 'Animations', icon: 'wind', sub: 'On / off and speed' },
   { id: 'tags', label: 'Tags', icon: 'tag', sub: 'Tags, sub-tags & week dots' },
   { id: 'places', label: 'Places', icon: 'map-pin', sub: 'Saved places' },
   { id: 'presets', label: 'Presets', icon: 'zap', sub: 'Quick time & duration picks' },
@@ -45,8 +49,8 @@ export function SettingsScreen({
   const app = useApp();
   const {
     settings, updateSettings, clearCompleted, clearAll,
-    addTag, renameTag, setTagColor, setTagHideDots, deleteTag,
-    addPlace, renamePlace, setPlaceTag, setPlaceLink, setPlacePhoto, deletePlace,
+    addTag, renameTag, setTagColor, setTagHideDots, setTagIcon, deleteTag,
+    addPlace, renamePlace, setPlaceTag, setPlaceLocation, setPlacePhoto, deletePlace,
   } = app;
   const [cat, setCat] = useState<Category | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -60,6 +64,10 @@ export function SettingsScreen({
   const [tagColorPage, setTagColorPage] = useState<'main' | 'custom'>('main');
   const [tempColor, setTempColor] = useState('#7c7cf0');
   const [tempIcon, setTempIcon] = useState('');
+  const [subIconFor, setSubIconFor] = useState<string | null>(null); // sub-tag whose icon is being picked
+  const [subIconPage, setSubIconPage] = useState<'grid' | 'custom'>('grid');
+  const [previewScale, setPreviewScale] = useState(settings.animScale); // follows the slider while dragging
+  useEffect(() => setPreviewScale(settings.animScale), [settings.animScale]);
 
   // Back inside a category returns to the category list (App closes the screen).
   useEffect(() => {
@@ -199,6 +207,45 @@ export function SettingsScreen({
           </View>
         )}
 
+        {cat === 'motion' && (
+          <View style={{ marginTop: 10 }}>
+            <Appear from="up" delay={20} style={styles.toggleRow}>
+              <View style={styles.toggleIcon}>
+                <Feather name="wind" size={17} color={C.accentB} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>Animations</Text>
+                <Text style={styles.toggleSub}>{settings.animations ? 'Smooth motion on every tap, sheet and screen' : 'Everything changes instantly'}</Text>
+              </View>
+              <Toggle value={settings.animations} onChange={(v) => updateSettings({ animations: v })} />
+            </Appear>
+
+            <Text style={styles.section}>ANIMATION SCALE</Text>
+            <Appear from="up" delay={70} style={[styles.scaleCard, !settings.animations && { opacity: 0.55 }]}>
+              <View style={styles.scaleHead}>
+                <Text style={styles.scaleVal}>{fmtScale(previewScale)}</Text>
+                <Text style={styles.scaleCap}>{previewScale < 1 ? `${fmtScale(1 / previewScale)} faster` : previewScale > 1 ? `${fmtScale(previewScale)} slower` : 'Normal speed'}</Text>
+                <View style={{ flex: 1 }} />
+                {settings.animScale !== 1 && settings.animations && (
+                  <Appear from="pop">
+                    <Pressable onPress={() => updateSettings({ animScale: 1 })} style={styles.scaleReset} hitSlop={6}>
+                      <Feather name="rotate-ccw" size={12} color={C.accentB} />
+                      <Text style={styles.scaleResetTxt}>1×</Text>
+                    </Pressable>
+                  </Appear>
+                )}
+              </View>
+              <ScaleSlider value={settings.animScale} disabled={!settings.animations} onPreview={setPreviewScale} onChange={(v) => updateSettings({ animScale: v })} />
+            </Appear>
+            <Text style={styles.hint}>Every animation's duration is multiplied by this — 0.5× plays them twice as fast, 4× four times slower. Springs keep their bounce.</Text>
+
+            <Text style={styles.section}>PREVIEW</Text>
+            <Appear from="up" delay={120}>
+              <MotionPreview scale={previewScale} enabled={settings.animations} />
+            </Appear>
+          </View>
+        )}
+
         {cat === 'tags' && (
           <View style={{ marginTop: 10 }}>
             {topTags.map((tag: Tag, ti) => (
@@ -223,6 +270,10 @@ export function SettingsScreen({
                       const hidden = inherited || !!st.hideDots;
                       return (
                         <View key={st.id} style={styles.subChip}>
+                          {/* Sub-tags share the parent's colour; an icon tells them apart. */}
+                          <Pressable hitSlop={6} onPress={() => { setSubIconPage('grid'); setSubIconFor(st.id); }} style={[styles.subIcon, !st.icon && styles.subIconEmpty, { boxShadow: `inset 0 0 0 1px ${st.icon ? 'rgba(255,255,255,0.1)' : hexA(tag.color, 0.5)}` }]}>
+                            {st.icon ? <Text style={styles.subIconTxt}>{st.icon}</Text> : <Feather name="plus" size={11} color={tag.color} />}
+                          </Pressable>
                           <Pressable onPress={() => setPrompt({ title: 'Rename sub-tag', initial: st.name, submitLabel: 'Save', onSubmit: (t) => renameTag(st.id, t) })}>
                             <Text style={[styles.subChipTxt, hidden && styles.nameHidden]}>{st.name}</Text>
                           </Pressable>
@@ -279,10 +330,16 @@ export function SettingsScreen({
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.manageNameTxt}>{pl.name}</Text>
-                    {!!pl.link && (
+                    {hasLocation(pl) ? (
                       <View style={styles.placeMetaRow}>
-                        <Feather name="link" size={11} color={C.muted} />
-                        <Text style={styles.placeMeta} numberOfLines={1}>{pl.link}</Text>
+                        <Feather name="map-pin" size={11} color={C.accentB} />
+                        <Text style={[styles.placeMeta, { color: C.accentB }]} numberOfLines={1}>
+                          {pl.address || (pl.lat != null && pl.lng != null ? fmtCoords(pl.lat, pl.lng) : 'On Google Maps')}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.placeMetaRow}>
+                        <Text style={styles.placeMeta}>No location yet</Text>
                       </View>
                     )}
                   </View>
@@ -421,7 +478,7 @@ export function SettingsScreen({
         tags={settings.tags}
         onRename={(name) => placeEdit && renamePlace(placeEdit, name)}
         onSetTag={(tagId) => placeEdit && setPlaceTag(placeEdit, tagId)}
-        onSetLink={(link) => placeEdit && setPlaceLink(placeEdit, link)}
+        onSetLocation={(loc) => placeEdit && setPlaceLocation(placeEdit, loc)}
         onSetPhoto={(uri) => placeEdit && setPlacePhoto(placeEdit, uri)}
         onDelete={() => {
           if (placeEdit) deletePlace(placeEdit);
@@ -468,6 +525,73 @@ export function SettingsScreen({
             <Text style={styles.popSaveTxt}>Save</Text>
           </Pressable>
         </View>
+      </CenterPopup>
+
+      {/* Sub-tag icon: the icon set (+ custom), or none */}
+      <CenterPopup open={subIconFor != null} onClose={() => setSubIconFor(null)}>
+        {(() => {
+          const st = settings.tags.find((t) => t.id === subIconFor);
+          if (!st) return null;
+          const parent = settings.tags.find((t) => t.id === st.parentId);
+          return subIconPage === 'grid' ? (
+            <Appear key="grid" from="left" distance={14}>
+              <View style={styles.subIconHead}>
+                <View style={[styles.subIconBig, { boxShadow: `inset 0 0 0 1.5px ${hexA(parent?.color ?? C.accentB, 0.6)}` }]}>
+                  {st.icon ? <Text style={styles.subIconBigTxt}>{st.icon}</Text> : <Feather name="tag" size={18} color={parent?.color ?? C.accentB} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.colorTitle, { marginBottom: 2 }]}>{st.name}</Text>
+                  <Text style={styles.subIconSub}>Sub-tag of {parent?.name ?? '—'}</Text>
+                </View>
+              </View>
+              <IconGrid
+                icons={settings.emojis}
+                value={st.icon ?? ''}
+                onPick={(e) => {
+                  setTagIcon(st.id, e);
+                  setTimeout(() => setSubIconFor(null), 240);
+                }}
+                onCustom={() => {
+                  setTempIcon(st.icon ?? '');
+                  setSubIconPage('custom');
+                }}
+              />
+              <View style={styles.popBtns}>
+                <Pressable style={styles.popCancel} onPress={() => { setTagIcon(st.id, null); setSubIconFor(null); }}>
+                  <Text style={[styles.popCancelTxt, { color: st.icon ? C.danger : C.muted }]}>No icon</Text>
+                </Pressable>
+                <Pressable style={styles.popCancel} onPress={() => setSubIconFor(null)}>
+                  <Text style={styles.popCancelTxt}>Done</Text>
+                </Pressable>
+              </View>
+            </Appear>
+          ) : (
+            <Appear key="custom" from="right" distance={14}>
+              <View style={styles.popHead}>
+                <Pressable hitSlop={8} style={styles.popBack} onPress={() => setSubIconPage('grid')}>
+                  <Feather name="chevron-left" size={20} color={C.textDim} />
+                </Pressable>
+                <Text style={[styles.colorTitle, { marginBottom: 0 }]}>Custom icon</Text>
+              </View>
+              <CustomIconInput value={tempIcon} onChange={setTempIcon} />
+              <Text style={styles.hint}>Type or paste any emoji, or up to two letters.</Text>
+              <View style={styles.popBtns}>
+                <Pressable style={styles.popCancel} onPress={() => setSubIconPage('grid')}>
+                  <Text style={styles.popCancelTxt}>Back</Text>
+                </Pressable>
+                <Pressable
+                  disabled={!tempIcon.trim()}
+                  style={[styles.popSave, !tempIcon.trim() && { opacity: 0.4 }]}
+                  onPress={() => {
+                    setTagIcon(st.id, tempIcon.trim());
+                    setSubIconFor(null);
+                  }}>
+                  <Text style={styles.popSaveTxt}>Save</Text>
+                </Pressable>
+              </View>
+            </Appear>
+          );
+        })()}
       </CenterPopup>
 
       {/* Tag colour: the palette row (+ custom), same as a task's picker */}
@@ -531,9 +655,9 @@ function DotsToggle({ hidden, onPress }: { hidden: boolean; onPress: () => void 
   const v = useSharedValue(hidden ? 1 : 0);
   const pop = useSharedValue(1);
   useEffect(() => {
-    v.value = withSpring(hidden ? 1 : 0, { damping: 16, stiffness: 240 });
+    v.value = withSpring(hidden ? 1 : 0, sp({ damping: 16, stiffness: 240 }));
     pop.value = 0.8;
-    pop.value = withSpring(1, { damping: 10, stiffness: 320 });
+    pop.value = withSpring(1, sp({ damping: 10, stiffness: 320 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hidden]);
   const bg = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(v.value, [0, 1], ['rgba(79,209,197,0.12)', 'rgba(255,255,255,0.04)']) }));
@@ -601,6 +725,23 @@ const styles = StyleSheet.create({
   subWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 7, paddingLeft: 10 },
   subChip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 9, paddingHorizontal: 11, paddingVertical: 8 },
   subChipTxt: { fontSize: 12.5, fontWeight: '600', color: C.textDim },
+  subIcon: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },
+  subIconEmpty: { backgroundColor: 'rgba(255,255,255,0.02)' },
+  subIconTxt: { fontSize: 12 },
+  subIconHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  subIconBig: { width: 46, height: 46, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  subIconBigTxt: { fontSize: 22 },
+  subIconSub: { fontSize: 12.5, color: C.muted, fontWeight: '600' },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 14 },
+  toggleIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(79,209,197,0.12)', alignItems: 'center', justifyContent: 'center' },
+  toggleTitle: { fontSize: 15.5, fontWeight: '700', color: C.text },
+  toggleSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
+  scaleCard: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 6 },
+  scaleHead: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  scaleVal: { fontSize: 28, fontWeight: '800', color: C.text, fontVariant: ['tabular-nums'] },
+  scaleCap: { fontSize: 13, fontWeight: '600', color: C.muted },
+  scaleReset: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, height: 30, borderRadius: 10, backgroundColor: 'rgba(79,209,197,0.12)' },
+  scaleResetTxt: { fontSize: 12.5, fontWeight: '800', color: C.accentB },
   addBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', backgroundColor: 'rgba(124,124,240,0.12)', boxShadow: 'inset 0 0 0 1px rgba(124,124,240,0.28)', marginTop: 4 },
   addBtnTxt: { fontSize: 14, fontWeight: '700', color: C.accentA },
   tabBar: { gap: 8, paddingRight: 20, paddingBottom: 14 },

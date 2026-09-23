@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Draft, Settings, Task } from './types';
+import { Draft, PlaceLocation, Settings, Task } from './types';
 import { DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
 import { COLORS } from './theme';
 import { expandForDay, parseId } from './recurrence';
@@ -25,12 +25,14 @@ type Ctx = {
   renameTag: (id: string, name: string) => void;
   setTagColor: (id: string, color: string) => void;
   setTagHideDots: (id: string, hide: boolean) => void; // keep the tag's tasks out of the week-strip dots
+  setTagIcon: (id: string, icon: string | null) => void; // sub-tag icon (null = none)
   deleteTag: (id: string) => void;
   addPlace: (name: string, tagId?: string | null) => void;
   renamePlace: (id: string, name: string) => void;
   setPlaceTag: (id: string, tagId: string | null) => void;
   setPlaceLink: (id: string, link: string) => void;
   setPlacePhoto: (id: string, photoUri: string | null) => void;
+  setPlaceLocation: (id: string, loc: PlaceLocation | null) => void; // picked on Google Maps (null = clear)
   deletePlace: (id: string) => void;
 };
 
@@ -179,6 +181,10 @@ export function AppProvider({
     setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, hideDots: hide } : t)) }));
   }, []);
 
+  const setTagIcon = useCallback((id: string, icon: string | null) => {
+    setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, icon: icon || undefined } : t)) }));
+  }, []);
+
   const deleteTag = useCallback((id: string) => {
     // Removed = the tag plus any of its sub-tags.
     const removed = new Set<string>([id]);
@@ -192,7 +198,7 @@ export function AppProvider({
   const addPlace = useCallback((name: string, tagId: string | null = null) => {
     const n = name.trim();
     if (!n) return;
-    setSettings((prev) => ({ ...prev, places: [...prev.places, { id: genId(), name: n, tagId, link: '', photoUri: null }] }));
+    setSettings((prev) => ({ ...prev, places: [...prev.places, { id: genId(), name: n, tagId, link: '', photoUri: null, lat: null, lng: null, address: '' }] }));
   }, []);
 
   const renamePlace = useCallback((id: string, name: string) => {
@@ -209,6 +215,12 @@ export function AppProvider({
   }, []);
   const setPlacePhoto = useCallback((id: string, photoUri: string | null) => {
     setSettings((prev) => ({ ...prev, places: prev.places.map((p) => (p.id === id ? { ...p, photoUri } : p)) }));
+  }, []);
+  const setPlaceLocation = useCallback((id: string, loc: PlaceLocation | null) => {
+    setSettings((prev) => ({
+      ...prev,
+      places: prev.places.map((p) => (p.id === id ? { ...p, link: loc?.link ?? '', lat: loc?.lat ?? null, lng: loc?.lng ?? null, address: loc?.address ?? '' } : p)),
+    }));
   }, []);
 
   const deletePlace = useCallback((id: string) => {
@@ -235,12 +247,14 @@ export function AppProvider({
     renameTag,
     setTagColor,
     setTagHideDots,
+    setTagIcon,
     deleteTag,
     addPlace,
     renamePlace,
     setPlaceTag,
     setPlaceLink,
     setPlacePhoto,
+    setPlaceLocation,
     deletePlace,
   };
 

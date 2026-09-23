@@ -101,15 +101,9 @@ export function findTag(tags: Tag[], id: string | null): Tag | null {
   return id ? tags.find((t) => t.id === id) || null : null;
 }
 
-// Display name for a tag id; sub-tags show as "Parent · Child".
-export function tagLabel(tags: Tag[], id: string | null): string {
-  const tag = findTag(tags, id);
-  if (!tag) return '';
-  if (tag.parentId) {
-    const parent = findTag(tags, tag.parentId);
-    return parent ? `${parent.name} · ${tag.name}` : tag.name;
-  }
-  return tag.name;
+// A tag as shown on chips and in pickers: its icon (sub-tags) before the name.
+export function tagLabel(t: Tag): string {
+  return t.icon ? `${t.icon} ${t.name}` : t.name;
 }
 
 export function placeLabel(places: Place[], id: string | null): string {

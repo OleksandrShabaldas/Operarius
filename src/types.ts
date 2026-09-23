@@ -39,18 +39,25 @@ export type Clock = '12h' | '24h';
 
 // User-defined tag. Top-level when parentId is null, otherwise a sub-tag.
 // `hideDots` keeps the tag's tasks (and, for a top-level tag, its sub-tags'
-// tasks) out of the week strip's per-task dots.
-export type Tag = { id: string; name: string; parentId: string | null; color: string; hideDots?: boolean };
+// tasks) out of the week strip's per-task dots. Sub-tags share their parent's
+// colour, so they can carry an `icon` (emoji / 2 letters) to tell them apart.
+export type Tag = { id: string; name: string; parentId: string | null; color: string; hideDots?: boolean; icon?: string };
 
-// User-defined place. May belong to a (top-level) tag, carry an open-able link,
-// and hold a photo.
+// User-defined place. May belong to a (top-level) tag, carry a location picked
+// on Google Maps, and hold a photo.
 export type Place = {
   id: string;
   name: string;
   tagId: string | null; // top-level tag it's filed under (null = Untagged)
-  link: string; // URL to open (a Google Maps link, or anything)
+  link: string; // the Google Maps link it was picked from (opens that exact place)
   photoUri: string | null; // local persisted image URI
+  lat: number | null; // coordinates of the picked spot
+  lng: number | null;
+  address: string; // the label that came with the pick (e.g. the place's name on Maps)
 };
+
+// A location picked on Google Maps.
+export type PlaceLocation = { link: string; lat: number | null; lng: number | null; address: string };
 
 // A quick-pick preset, optionally scoped to a top-level tag (null = global).
 export type Preset = { value: number; tagId: string | null };
@@ -68,4 +75,6 @@ export type Settings = {
   colors: string[]; // the task color palette (editable)
   emojis: string[]; // the task icon set (editable)
   swapOnDrag: boolean; // dragging a task past another swaps them (off = allow overlap)
+  animations: boolean; // app-wide animations on/off
+  animScale: number; // animation duration scale, 0.5 (faster) … 4 (slower)
 };

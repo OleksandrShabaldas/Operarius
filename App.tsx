@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, StyleSheet, View } from 'react-native';
-import Animated, { SlideInRight, SlideOutRight } from 'react-native-reanimated';
+import Animated, { ReducedMotionConfig, ReduceMotion, SlideInRight, SlideOutRight } from 'react-native-reanimated';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { C } from './src/theme';
+import { ms, setMotion } from './src/motion';
 import { AppProvider, useApp } from './src/store';
 import { Draft, TaskType } from './src/types';
 import { parseId } from './src/recurrence';
@@ -52,6 +54,7 @@ function Root() {
   const [selectedKey, setSelectedKey] = useState<string>(todayKey());
   const [draft, setDraft] = useState<Draft | null>(null);
   const [autoDate, setAutoDate] = useState(false); // open the editor straight into the date picker (copy flow)
+  const [draftTouched, setDraftTouched] = useState<(keyof Draft)[]>([]); // fields the opener set on purpose
   const [viewId, setViewId] = useState<string | null>(null);
   const [todayPing, setTodayPing] = useState(0); // re-tapping the Today tab → jump to today
 
@@ -59,6 +62,12 @@ function Root() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const curVer = currentVersion();
+
+  // Apply the animation settings before any child starts an animation (layout
+  // effects run before every passive effect in the tree).
+  useLayoutEffect(() => {
+    setMotion(settings.animations, settings.animScale);
+  }, [settings.animations, settings.animScale]);
 
   const runUpdateCheck = useCallback(async (manual: boolean) => {
     setChecking(true);
@@ -108,6 +117,12 @@ function Root() {
     (opts?: { startMin?: number; type?: TaskType }) => {
       setAutoDate(false);
       const type: TaskType = opts?.type ?? (tab === 'todo' ? 'todo' : 'planned');
+      // A tapped free slot sets the time, and the To-do tab / All-day button the
+      // type, on purpose — a name suggestion must not override those.
+      const set: (keyof Draft)[] = [];
+      if (opts?.startMin != null) set.push('start');
+      if (opts?.type || tab === 'todo') set.push('type');
+      setDraftTouched(set);
       const dayPlanned = tasksForDay(selectedKey).filter((t) => t.type === 'planned');
       const after = dayPlanned.reduce((m, t) => Math.max(m, t.start + t.dur), settings.dayStart);
       const start = Math.min(opts?.startMin ?? after, settings.dayEnd - 30);
@@ -139,8 +154,9 @@ function Root() {
     if (!viewId) return;
     const base = tasks.find((x) => x.id === parseId(viewId).baseId);
     setAutoDate(false);
+    setDraftTouched([]);
     setViewId(null);
-    if (base) setTimeout(() => setDraft({ ...base }), 230); // editing a repeat edits the series
+    if (base) setTimeout(() => setDraft({ ...base }), ms(230) + 30); // editing a repeat edits the series
   }, [viewId, tasks]);
 
   // Copy an existing task into a fresh draft (no id → new task) and jump the
@@ -152,7 +168,8 @@ function Root() {
     if (base) {
       const { id: _id, done: _done, doneDates: _dd, ...rest } = base;
       setAutoDate(true);
-      setTimeout(() => setDraft({ ...rest, done: false, doneDates: [], expanded: false, subtasks: base.subtasks.map((s) => ({ ...s, done: false })) }), 230);
+      setDraftTouched(['emoji', 'color', 'type', 'start', 'dur', 'tagId', 'placeId', 'notes', 'subtasks', 'repeat']);
+      setTimeout(() => setDraft({ ...rest, done: false, doneDates: [], expanded: false, subtasks: base.subtasks.map((s) => ({ ...s, done: false })) }), ms(230) + 30);
     }
   }, [viewId, tasks]);
 
@@ -178,7 +195,7 @@ function Root() {
     draft && draft.type === 'planned' && draft.date
       ? tasksForDay(draft.date)
           .filter((t) => t.type === 'planned' && parseId(t.id).baseId !== draft.id)
-          .map((t) => ({ start: t.start, dur: t.dur, title: t.title, color: t.color }))
+          .map((t) => ({ id: t.id, start: t.start, dur: t.dur, title: t.title, color: t.color }))
       : [];
 
   // Resolve the info-sheet target — a repeating occurrence is reconstructed
@@ -192,6 +209,8 @@ function Root() {
 
   return (
     <View style={styles.bg}>
+      {/* Animations off → every Reanimated animation (incl. layout ones) finishes instantly. */}
+      <ReducedMotionConfig mode={settings.animations ? ReduceMotion.System : ReduceMotion.Always} />
       <BackgroundGlow />
 
       {/* Base tabs — each screen's list staggers in on mount */}
@@ -219,7 +238,7 @@ function Root() {
 
       {/* Pushed screens — slide in/out over the tabs */}
       {overlay === 'stats' && (
-        <Animated.View entering={SlideInRight.duration(300)} exiting={SlideOutRight.duration(260)} style={styles.overlay}>
+        <Animated.View entering={SlideInRight.duration(ms(300))} exiting={SlideOutRight.duration(ms(260))} style={styles.overlay}>
           <StatsScreen
             onClose={() => setOverlay(null)}
             onPickDay={(key) => {
@@ -231,7 +250,7 @@ function Root() {
         </Animated.View>
       )}
       {overlay === 'settings' && (
-        <Animated.View entering={SlideInRight.duration(300)} exiting={SlideOutRight.duration(260)} style={styles.overlay}>
+        <Animated.View entering={SlideInRight.duration(ms(300))} exiting={SlideOutRight.duration(ms(260))} style={styles.overlay}>
           <SettingsScreen onClose={() => setOverlay(null)} onCheckUpdates={() => runUpdateCheck(true)} checkingUpdates={checking} currentVersion={curVer} />
         </Animated.View>
       )}
@@ -250,6 +269,8 @@ function Root() {
 
       <TaskEditorSheet
         draft={draft}
+        library={tasks}
+        initialTouched={draftTouched}
         tags={settings.tags}
         places={settings.places}
         clock={settings.clock}
@@ -278,11 +299,13 @@ function Root() {
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AppProvider>
-          <Root />
-        </AppProvider>
-      </SafeAreaProvider>
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+        <SafeAreaProvider>
+          <AppProvider>
+            <Root />
+          </AppProvider>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
@@ -290,6 +313,8 @@ export default function App() {
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: C.bg },
   fill: { flex: 1 },
-  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: C.bg },
+  // Pushed screens sit above everything on the base tabs (explicit zIndex so no
+  // floating element of a tab can ever draw over them).
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: C.bg, zIndex: 100 },
   glow: { position: 'absolute', top: 0, left: 0, right: 0, height: 340, pointerEvents: 'none' },
 });

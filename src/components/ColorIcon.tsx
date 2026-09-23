@@ -4,6 +4,7 @@ import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withSprin
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
+import { ms, sp } from '../motion';
 import { Appear, Tappable } from './anim';
 
 // HSL (h in degrees, s/l in 0..100) → #rrggbb.
@@ -94,7 +95,7 @@ export function ColorSwatch({
 }) {
   const sel = useSharedValue(selected ? 1 : 0);
   useEffect(() => {
-    sel.value = withSpring(selected ? 1 : 0, SPRING);
+    sel.value = withSpring(selected ? 1 : 0, sp(SPRING));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
   const gap = Math.max(4, Math.round(size * 0.14));
@@ -130,7 +131,7 @@ export function IconCell({
 }) {
   const sel = useSharedValue(selected ? 1 : 0);
   useEffect(() => {
-    sel.value = withSpring(selected ? 1 : 0, SPRING);
+    sel.value = withSpring(selected ? 1 : 0, sp(SPRING));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
   const plate = useAnimatedStyle(() => ({
@@ -207,7 +208,7 @@ export function IconGrid({
   onCustom: () => void;
   baseDelay?: number;
 }) {
-  const isCustom = !icons.includes(value);
+  const isCustom = !!value && !icons.includes(value); // no icon at all isn't "custom"
   const items: (string | null)[] = [...icons, null];
   const cols = Math.ceil(items.length / 2);
   return (
@@ -275,7 +276,7 @@ export function CustomColorGrid({ value, onPick }: { value: string; onPick: (hex
   useEffect(() => {
     if (!cell) return;
     if (!sel) {
-      ro.value = withTiming(0, { duration: 140 });
+      ro.value = withTiming(0, { duration: ms(140) });
       placed.current = false;
       return;
     }
@@ -286,10 +287,10 @@ export function CustomColorGrid({ value, onPick }: { value: string; onPick: (hex
       ry.value = y;
       placed.current = true;
     } else {
-      rx.value = withSpring(x, SPRING);
-      ry.value = withSpring(y, SPRING);
+      rx.value = withSpring(x, sp(SPRING));
+      ry.value = withSpring(y, sp(SPRING));
     }
-    ro.value = withSpring(1, SPRING);
+    ro.value = withSpring(1, sp(SPRING));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel?.r, sel?.c, cell]);
   const ring = useAnimatedStyle(() => ({
@@ -301,7 +302,7 @@ export function CustomColorGrid({ value, onPick }: { value: string; onPick: (hex
   const pulse = useSharedValue(1);
   useEffect(() => {
     pulse.value = 0.94;
-    pulse.value = withSpring(1, { damping: 12, stiffness: 320 });
+    pulse.value = withSpring(1, sp({ damping: 12, stiffness: 320 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
@@ -358,7 +359,7 @@ export function CustomIconInput({ value, onChange }: { value: string; onChange: 
   const pulse = useSharedValue(1);
   useEffect(() => {
     pulse.value = 0.88;
-    pulse.value = withSpring(1, { damping: 11, stiffness: 320 });
+    pulse.value = withSpring(1, sp({ damping: 11, stiffness: 320 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));

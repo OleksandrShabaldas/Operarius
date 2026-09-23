@@ -20,6 +20,7 @@ import { Clock } from '../types';
 import { dateFromKey, dateKey, fmt, fmtDur, todayKey, weekdayLetters } from '../utils';
 import { CenterPopup as Popup } from './Overlay';
 import { Appear, Tappable } from './anim';
+import { sp } from '../motion';
 
 // The recessed drum "deck": a shaded card holding one or more wheel columns,
 // with a highlighted centre band and a soft top/bottom vignette so the whole
@@ -222,6 +223,34 @@ function Presets({
   );
 }
 
+// ---- Anchors: pin a task's start / end to another task ---------------------
+// A task on the same day (or a day edge) that a start or end can be pinned to.
+export type Neighbor = { id: string; title: string; start: number; end: number; color: string };
+// "X minutes after `id` ends" (start) or "X minutes before `id` starts" (end).
+export type Anchor = { id: string; gap: number };
+export const DAY_START_ID = '__daystart';
+export const DAY_END_ID = '__dayend';
+
+// Start picker → "After task"; end picker → "Until task".
+export type TimeAnchorConfig = {
+  kind: 'after' | 'until';
+  options: Neighbor[]; // candidate tasks (+ the day edge), in time order
+  preferred: string | null; // the nearest one, preselected
+  active: Anchor | null; // the pin currently in effect, if any
+  start: number; // this task's start and duration (limits + preview)
+  dur: number;
+  onApply: (a: Anchor, time: number) => void; // time = the new start / end
+};
+
+// Duration picker → "In between tasks": start after one, end before another.
+export type BetweenConfig = {
+  options: Neighbor[]; // the day's tasks with the day edges first / last
+  active: { after: Anchor | null; until: Anchor | null };
+  onApply: (after: Anchor, until: Anchor, start: number, end: number) => void;
+};
+
+const anchorTime = (kind: 'after' | 'until', o: Neighbor, gap: number) => (kind === 'after' ? o.end + gap : o.start - gap);
+
 // ---- Time-of-day picker (separate hour / minute drums) --------------------
 export function TimePickerPopup({
   visible,
@@ -233,6 +262,7 @@ export function TimePickerPopup({
   clock,
   min = 0,
   max = 24 * 60 - 5,
+  anchor,
   onChange,
   onClose,
 }: {
@@ -245,9 +275,15 @@ export function TimePickerPopup({
   clock: Clock;
   min?: number;
   max?: number;
+  anchor?: TimeAnchorConfig; // offer "After task" / "Until task"
   onChange: (v: number) => void;
   onClose: () => void;
 }) {
+  const [page, setPage] = useState<'time' | 'anchor'>('time');
+  useEffect(() => {
+    if (visible) setPage('time');
+  }, [visible]);
+
   const is12 = clock === '12h';
   const h24 = Math.floor(value / 60) % 24;
   const minVal = value % 60;
@@ -266,57 +302,186 @@ export function TimePickerPopup({
 
   return (
     <CenterPopup visible={visible} title={title} onClose={onClose}>
-      <WheelDeck>
-        <Wheel values={hourValues} index={hourIdx} onIndex={(i) => commit(i, minIdx, ampmIdx)} format={(v) => pad2(v)} width={64} />
-        <Text style={styles.colon}>:</Text>
-        <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(hourIdx, i, ampmIdx)} format={(v) => pad2(v)} width={64} />
-        {is12 && (
-          <Wheel values={[0, 1]} index={ampmIdx} onIndex={(i) => commit(hourIdx, minIdx, i)} format={(v) => (v === 0 ? 'AM' : 'PM')} width={64} />
-        )}
-      </WheelDeck>
-      <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={(v) => fmt(v, clock)} onPick={onChange} />
+      {page === 'time' || !anchor ? (
+        <Appear key="time" from="left" distance={14}>
+          <WheelDeck>
+            <Wheel values={hourValues} index={hourIdx} onIndex={(i) => commit(i, minIdx, ampmIdx)} format={(v) => pad2(v)} width={64} />
+            <Text style={styles.colon}>:</Text>
+            <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(hourIdx, i, ampmIdx)} format={(v) => pad2(v)} width={64} />
+            {is12 && (
+              <Wheel values={[0, 1]} index={ampmIdx} onIndex={(i) => commit(hourIdx, minIdx, i)} format={(v) => (v === 0 ? 'AM' : 'PM')} width={64} />
+            )}
+          </WheelDeck>
+          <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={(v) => fmt(v, clock)} onPick={onChange} />
+          {anchor && (
+            <>
+              <DynHead />
+              <AnchorCard cfg={anchor} clock={clock} onPress={() => setPage('anchor')} />
+            </>
+          )}
+        </Appear>
+      ) : (
+        <Appear key="anchor" from="right" distance={14}>
+          <AnchorPage cfg={anchor} clock={clock} onBack={() => setPage('time')} />
+        </Appear>
+      )}
     </CenterPopup>
   );
 }
 
-// ---- Duration picker (hours / minutes drums + dynamic options) ------------
-// A neighbouring task on the same day, used as the anchor of a dynamic duration.
-export type Neighbor = { title: string; start: number; end: number; color: string };
-
-// A dynamic duration moves ONE edge of the task relative to an anchor and
-// keeps the other edge where it was when the option was picked:
-//  • after  — start = anchor end + X   (end stays; the task fills back to it)
-//  • before — end   = anchor start − X (start stays; the task fills up to it)
-// With no neighbour, the anchor is the edge of the visible day window.
-type DynMode = 'after' | 'before';
-type Dyn = { mode: DynMode; S0: number; E0: number; at: number; who: Neighbor | null; keepEnd: boolean; maxOff: number };
-
-const DAY_MAX = 24 * 60;
-
-function dynRange(a: Dyn, x: number): { s: number; e: number } {
-  if (a.mode === 'after') {
-    const s = Math.min(DAY_MAX - 5, a.at + x);
-    const e = a.keepEnd ? a.E0 : Math.min(DAY_MAX, s + (a.E0 - a.S0));
-    return { s, e: Math.max(s + 5, e) };
-  }
-  return { s: a.S0, e: Math.max(a.S0 + 5, a.at - x) };
+function DynHead() {
+  return (
+    <View style={styles.dynHead}>
+      <View style={styles.dynLine} />
+      <Feather name="zap" size={11} color={C.muted} />
+      <Text style={styles.dynLabel}>DYNAMIC</Text>
+      <View style={styles.dynLine} />
+    </View>
+  );
 }
 
+// The entry card on the time page: what the pin is (or would be), one tap away.
+function AnchorCard({ cfg, clock, onPress }: { cfg: TimeAnchorConfig; clock: Clock; onPress: () => void }) {
+  const after = cfg.kind === 'after';
+  const on = cfg.active ? cfg.options.find((o) => o.id === cfg.active!.id) ?? null : null;
+  const who = on ?? cfg.options.find((o) => o.id === cfg.preferred) ?? null;
+  const f = (v: number) => fmt(v, clock);
+  let sub = after ? 'Pick a task to start after' : 'Pick a task to end before';
+  if (who) {
+    const t = after ? `ends ${f(who.end)}` : `starts ${f(who.start)}`;
+    sub = on ? `${who.title} · ${cfg.active!.gap ? `${fmtDur(cfg.active!.gap)} ${after ? 'after' : 'before'}` : after ? 'right after' : 'right before'}` : `${who.title} · ${t}`;
+  }
+  return (
+    <Appear delay={60} from="up">
+      <Tappable onPress={onPress} style={[styles.anchorCard, !!on && styles.anchorCardOn]}>
+        <View style={styles.anchorIcon}>
+          <Feather name={after ? 'skip-back' : 'skip-forward'} size={15} color={C.accentB} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.anchorLabel}>{after ? 'After task' : 'Until task'}</Text>
+          <View style={styles.dynWhoRow}>
+            {who && <View style={[styles.dynWhoDot, { backgroundColor: who.color }]} />}
+            <Text style={styles.anchorSub} numberOfLines={1}>
+              {sub}
+            </Text>
+          </View>
+        </View>
+        {on ? <Feather name="check-circle" size={17} color={C.accentB} /> : <Feather name="chevron-right" size={18} color={C.muted} />}
+      </Tappable>
+    </Appear>
+  );
+}
+
+// Choose the task, then the gap; every change applies live (like a preset).
+function AnchorPage({ cfg, clock, onBack }: { cfg: TimeAnchorConfig; clock: Clock; onBack: () => void }) {
+  const after = cfg.kind === 'after';
+  const opts = cfg.options.filter((o) => (after ? true : o.start - cfg.start >= 5));
+  const initial = (cfg.active && opts.some((o) => o.id === cfg.active!.id) ? cfg.active.id : null) ?? (opts.some((o) => o.id === cfg.preferred) ? cfg.preferred : null) ?? opts[0]?.id ?? null;
+  const [sel, setSel] = useState<string | null>(initial);
+  const [gap, setGap] = useState(cfg.active && cfg.active.id === initial ? cfg.active.gap : 0);
+  const a = opts.find((o) => o.id === sel) ?? null;
+  const maxGap = !a ? 0 : after ? 180 : Math.max(0, Math.min(180, Math.floor((a.start - cfg.start - 5) / 5) * 5));
+  const g = Math.min(gap, maxGap);
+
+  const apply = (o: Neighbor | null, x: number) => {
+    if (o) cfg.onApply({ id: o.id, gap: x }, anchorTime(cfg.kind, o, x));
+  };
+  // Opening the page applies the (pre)selected task at once.
+  useEffect(() => {
+    apply(a, g);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const f = (v: number) => fmt(v, clock);
+  const s = a ? (after ? a.end + g : cfg.start) : cfg.start;
+  const e = a ? (after ? s + cfg.dur : a.start - g) : cfg.start + cfg.dur;
+
+  // Bring the preselected chip into view (the list is in time order).
+  const chips = useRef<ScrollView>(null);
+  const scrolled = useRef(false);
+  const onChipLayout = (id: string, x: number) => {
+    if (!scrolled.current && id === sel) {
+      scrolled.current = true;
+      chips.current?.scrollTo({ x: Math.max(0, x - 44), animated: false });
+    }
+  };
+
+  return (
+    <>
+      <View style={styles.dynPageHead}>
+        <Tappable onPress={onBack} hitSlop={8} style={styles.dynBack}>
+          <Feather name="chevron-left" size={18} color={C.textDim} />
+        </Tappable>
+        <Text style={styles.dynTitle}>{after ? 'Start after a task' : 'End before a task'}</Text>
+      </View>
+      {opts.length === 0 ? (
+        <Text style={styles.empty}>No task starts after this one on this day.</Text>
+      ) : (
+        <>
+          <ScrollView ref={chips} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.anchorChips} style={styles.anchorChipsBox}>
+            {opts.map((o, i) => {
+              const on = o.id === sel;
+              const edge = o.id === DAY_START_ID || o.id === DAY_END_ID;
+              return (
+                <View key={o.id} onLayout={(ev) => onChipLayout(o.id, ev.nativeEvent.layout.x)}>
+                <Appear delay={30 + i * 26} from="right" distance={10}>
+                  <Tappable
+                    onPress={() => {
+                      setSel(o.id);
+                      const mg = after ? 180 : Math.max(0, Math.min(180, Math.floor((o.start - cfg.start - 5) / 5) * 5));
+                      const x = Math.min(gap, mg);
+                      setGap(x);
+                      apply(o, x);
+                    }}
+                    style={[styles.anchorChip, on && styles.anchorChipOn]}>
+                    {edge ? <Feather name={o.id === DAY_START_ID ? 'sunrise' : 'sunset'} size={12} color={on ? '#0b0b0d' : C.muted} /> : <View style={[styles.dynWhoDot, { backgroundColor: o.color }]} />}
+                    <View>
+                      <Text style={[styles.anchorChipTxt, on && { color: '#0b0b0d' }]} numberOfLines={1}>
+                        {o.title}
+                      </Text>
+                      <Text style={[styles.anchorChipTime, on && { color: 'rgba(11,11,13,0.7)' }]}>{after ? f(o.end) : f(o.start)}</Text>
+                    </View>
+                  </Tappable>
+                </Appear>
+                </View>
+              );
+            })}
+          </ScrollView>
+          <WheelDeck>
+            <Wheel
+              key={sel ?? 'none'}
+              values={range(0, maxGap, 5)}
+              index={Math.round(g / 5)}
+              onIndex={(i) => {
+                setGap(i * 5);
+                apply(a, i * 5);
+              }}
+              format={(v) => String(v)}
+              width={70}
+            />
+            <Text style={styles.unit}>{after ? 'min after' : 'min before'}</Text>
+          </WheelDeck>
+          {a && <PinDiagram kind={cfg.kind} anchor={a} gap={g} s={s} e={e} clock={clock} />}
+        </>
+      )}
+      <Tappable onPress={onBack} style={styles.backRow}>
+        <Feather name="chevron-left" size={16} color={C.textDim} />
+        <Text style={styles.backTxt}>Back to time</Text>
+      </Tappable>
+    </>
+  );
+}
+
+// ---- Duration picker (hours / minutes drums + "in between tasks") ---------
 export function DurationPickerPopup({
   visible,
   value,
   presets = [],
   tagPresets = [],
   tagName = null,
-  dynamic = false,
-  start = 0,
   clock = '24h',
-  prev = null,
-  next = null,
-  dayStart = 0,
-  dayEnd = DAY_MAX,
+  between,
   onChange,
-  onApplyRange,
   onClose,
 }: {
   visible: boolean;
@@ -324,24 +489,14 @@ export function DurationPickerPopup({
   presets?: number[];
   tagPresets?: number[];
   tagName?: string | null;
-  dynamic?: boolean; // offer "after previous" / "until next"
-  start?: number; // the task's own start
   clock?: Clock;
-  prev?: Neighbor | null; // the task this one would follow
-  next?: Neighbor | null; // the task this one would run up to
-  dayStart?: number; // fallback anchors when there is no neighbour
-  dayEnd?: number;
+  between?: BetweenConfig; // offer "In between tasks"
   onChange: (v: number) => void;
-  onApplyRange?: (start: number, dur: number) => void; // set start & duration together
   onClose: () => void;
 }) {
-  const [dyn, setDyn] = useState<Dyn | null>(null);
-  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState<'dur' | 'between'>('dur');
   useEffect(() => {
-    if (visible) {
-      setDyn(null);
-      setOffset(0);
-    }
+    if (visible) setPage('dur');
   }, [visible]);
 
   const h = Math.min(12, Math.floor(value / 60));
@@ -351,42 +506,11 @@ export function DurationPickerPopup({
   const minuteValues = range(0, 55, 5);
   const commit = (hIdx: number, mIdx: number) => onChange(Math.max(5, hIdx * 60 + mIdx * 5));
 
-  const afterAt = prev ? prev.end : dayStart;
-  const beforeAt = next ? next.start : dayEnd;
-  const canBefore = beforeAt - start >= 5;
-
-  const apply = (a: Dyn, x: number) => {
-    const { s, e } = dynRange(a, x);
-    onApplyRange?.(s, e - s);
-  };
-  // Entering an option applies it at 0 min straight away (it works like a
-  // preset); the drum then fine-tunes the gap.
-  const enter = (mode: DynMode) => {
-    const S0 = start;
-    const E0 = start + value;
-    let a: Dyn;
-    if (mode === 'after') {
-      const keepEnd = afterAt <= E0 - 5;
-      const maxOff = keepEnd ? Math.min(180, E0 - 5 - afterAt) : 180;
-      a = { mode, S0, E0, at: afterAt, who: prev, keepEnd, maxOff: Math.floor(maxOff / 5) * 5 };
-    } else {
-      const maxOff = Math.min(180, beforeAt - S0 - 5);
-      a = { mode, S0, E0, at: beforeAt, who: next, keepEnd: false, maxOff: Math.max(0, Math.floor(maxOff / 5) * 5) };
-    }
-    setDyn(a);
-    setOffset(0);
-    apply(a, 0);
-  };
-  const setOff = (x: number) => {
-    setOffset(x);
-    if (dyn) apply(dyn, x);
-  };
-
-  const f = (v: number) => fmt(v, clock);
+  const pair = between ? [between.active.after, between.active.until].map((x) => (x ? between.options.find((o) => o.id === x.id) ?? null : null)) : [null, null];
 
   return (
     <CenterPopup visible={visible} title="Duration" onClose={onClose}>
-      {dyn == null ? (
+      {page === 'dur' || !between ? (
         <Appear key="dur" from="left" distance={14}>
           <WheelDeck>
             <Wheel values={hourValues} index={h} onIndex={(i) => commit(i, minIdx)} format={(v) => String(v)} width={56} />
@@ -395,129 +519,180 @@ export function DurationPickerPopup({
             <Text style={styles.unit}>m</Text>
           </WheelDeck>
           <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={fmtDur} onPick={onChange} />
-          {dynamic && (
+          {between && (
             <>
-              <View style={styles.dynHead}>
-                <View style={styles.dynLine} />
-                <Feather name="zap" size={11} color={C.muted} />
-                <Text style={styles.dynLabel}>DYNAMIC</Text>
-                <View style={styles.dynLine} />
-              </View>
-              <View style={styles.dynRow}>
-                <DynCard
-                  icon="skip-back"
-                  label={prev ? 'After previous' : 'After day start'}
-                  who={prev}
-                  fallback="Day start"
-                  time={prev ? `ends ${f(afterAt)}` : f(afterAt)}
-                  onPress={() => enter('after')}
-                  delay={60}
-                />
-                <DynCard
-                  icon="skip-forward"
-                  label={next ? 'Until next' : 'Until day end'}
-                  who={next}
-                  fallback="Day end"
-                  time={canBefore ? (next ? `starts ${f(beforeAt)}` : f(beforeAt)) : 'No room after this start'}
-                  disabled={!canBefore}
-                  onPress={() => enter('before')}
-                  delay={110}
-                />
-              </View>
+              <DynHead />
+              <Appear delay={60} from="up">
+                <Tappable onPress={() => setPage('between')} style={[styles.anchorCard, !!(pair[0] && pair[1]) && styles.anchorCardOn]}>
+                  <View style={styles.anchorIcon}>
+                    <Feather name="minimize-2" size={15} color={C.accentB} style={{ transform: [{ rotate: '45deg' }] }} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.anchorLabel}>In between tasks</Text>
+                    <Text style={styles.anchorSub} numberOfLines={1}>
+                      {pair[0] && pair[1] ? `${pair[0].title}  →  ${pair[1].title}` : 'Fill the time between two tasks'}
+                    </Text>
+                  </View>
+                  {pair[0] && pair[1] ? <Feather name="check-circle" size={17} color={C.accentB} /> : <Feather name="chevron-right" size={18} color={C.muted} />}
+                </Tappable>
+              </Appear>
             </>
           )}
         </Appear>
       ) : (
-        <Appear key={`dyn-${dyn.mode}`} from="right" distance={14}>
-          <View style={styles.dynPageHead}>
-            <Tappable onPress={() => setDyn(null)} hitSlop={8} style={styles.dynBack}>
-              <Feather name="chevron-left" size={18} color={C.textDim} />
-            </Tappable>
-            <Text style={styles.dynTitle}>
-              {dyn.mode === 'after' ? (dyn.who ? 'After previous task' : 'After day start') : dyn.who ? 'Until next task' : 'Until day end'}
-            </Text>
-          </View>
-          <WheelDeck>
-            <Wheel values={range(0, dyn.maxOff, 5)} index={Math.round(offset / 5)} onIndex={(i) => setOff(i * 5)} format={(v) => String(v)} width={70} />
-            <Text style={styles.unit}>{dyn.mode === 'after' ? 'min after' : 'min before'}</Text>
-          </WheelDeck>
-          <DynDiagram dyn={dyn} offset={offset} clock={clock} />
-          {dyn.mode === 'after' && !dyn.keepEnd && (
-            <Text style={styles.dynHint}>
-              {dyn.who ? `“${dyn.who.title}” ends after this task would, so the task moves and keeps its ${fmtDur(dyn.E0 - dyn.S0)} length.` : `The task moves and keeps its ${fmtDur(dyn.E0 - dyn.S0)} length.`}
-            </Text>
-          )}
-          <Tappable onPress={() => setDyn(null)} style={styles.backRow}>
-            <Feather name="chevron-left" size={16} color={C.textDim} />
-            <Text style={styles.backTxt}>Back to duration</Text>
-          </Tappable>
+        <Appear key="between" from="right" distance={14}>
+          <BetweenPage cfg={between} clock={clock} onBack={() => setPage('dur')} />
         </Appear>
       )}
     </CenterPopup>
   );
 }
 
-function DynCard({
-  icon,
-  label,
-  who,
-  fallback,
-  time,
-  disabled,
-  onPress,
-  delay,
-}: {
-  icon: keyof typeof Feather.glyphMap;
-  label: string;
-  who: Neighbor | null;
-  fallback: string;
-  time: string;
-  disabled?: boolean;
-  onPress: () => void;
-  delay: number;
-}) {
+// Pick the task to start after, then the one to end before; the task then
+// fills exactly the time between them (applied as soon as both are chosen).
+function BetweenPage({ cfg, clock, onBack }: { cfg: BetweenConfig; clock: Clock; onBack: () => void }) {
+  const find = (id: string | undefined | null) => (id ? cfg.options.find((o) => o.id === id) ?? null : null);
+  const [aId, setA] = useState<string | null>(find(cfg.active.after?.id)?.id ?? null);
+  const [bId, setB] = useState<string | null>(find(cfg.active.until?.id)?.id ?? null);
+  const [slot, setSlot] = useState<'after' | 'until'>(aId && !bId ? 'until' : 'after');
+  const A = find(aId);
+  const B = find(bId);
+  const f = (v: number) => fmt(v, clock);
+
+  const validUntil = (o: Neighbor, from: Neighbor | null) => !!from && o.id !== DAY_START_ID && o.start - from.end >= 5;
+  const validAfter = (o: Neighbor) => o.id !== DAY_END_ID;
+
+  const pick = (o: Neighbor) => {
+    if (slot === 'after') {
+      if (!validAfter(o)) return;
+      setA(o.id);
+      const keepB = B && validUntil(B, o);
+      if (!keepB) setB(null);
+      if (keepB && B) cfg.onApply({ id: o.id, gap: 0 }, { id: B.id, gap: 0 }, o.end, B.start);
+      setSlot(keepB ? 'after' : 'until');
+    } else {
+      if (!validUntil(o, A) || !A) return;
+      setB(o.id);
+      cfg.onApply({ id: A.id, gap: 0 }, { id: o.id, gap: 0 }, A.end, o.start);
+    }
+  };
+
+  // After choosing where to start, bring the tasks you can end before into view
+  // (they come right after it); an existing pair opens scrolled to itself.
+  const listRef = useRef<ScrollView>(null);
+  const rowY = useRef<Record<string, number>>({});
+  const scrollToRow = (id: string | null, animated: boolean) => {
+    const y = id ? rowY.current[id] : undefined;
+    if (y != null) listRef.current?.scrollTo({ y: Math.max(0, y - 6), animated });
+  };
+  useEffect(() => {
+    if (slot === 'until' && aId) scrollToRow(aId, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slot, aId]);
+  const onRowLayout = (id: string, y: number) => {
+    const first = rowY.current[id] == null;
+    rowY.current[id] = y;
+    if (first && id === aId) scrollToRow(aId, false);
+  };
+
+  const done = A && B;
   return (
-    <Appear delay={delay} from="up" style={{ flex: 1 }}>
-      <Tappable onPress={onPress} disabled={disabled} style={[styles.dynCard, disabled && styles.dynCardOff]}>
-        <View style={styles.dynCardTop}>
-          <Feather name={icon} size={13} color={C.accentB} />
-          <Text style={styles.dynCardLabel} numberOfLines={1}>
-            {label}
+    <>
+      <View style={styles.dynPageHead}>
+        <Tappable onPress={onBack} hitSlop={8} style={styles.dynBack}>
+          <Feather name="chevron-left" size={18} color={C.textDim} />
+        </Tappable>
+        <Text style={styles.dynTitle}>Between two tasks</Text>
+      </View>
+
+      <View style={styles.slotRow}>
+        <Tappable onPress={() => setSlot('after')} style={[styles.slotPill, slot === 'after' && styles.slotPillOn]}>
+          <Text style={styles.slotKind}>AFTER</Text>
+          <Text style={[styles.slotName, !A && { color: C.faint }]} numberOfLines={1}>
+            {A ? A.title : 'Choose'}
           </Text>
-        </View>
-        <View style={styles.dynWhoRow}>
-          <View style={[styles.dynWhoDot, { backgroundColor: who ? who.color : C.faint }]} />
-          <Text style={styles.dynWho} numberOfLines={1}>
-            {who ? who.title : fallback}
+        </Tappable>
+        <Feather name="arrow-right" size={15} color={C.faint} />
+        <Tappable onPress={() => A && setSlot('until')} style={[styles.slotPill, slot === 'until' && styles.slotPillOn, !A && { opacity: 0.45 }]}>
+          <Text style={styles.slotKind}>UNTIL</Text>
+          <Text style={[styles.slotName, !B && { color: C.faint }]} numberOfLines={1}>
+            {B ? B.title : 'Choose'}
           </Text>
-        </View>
-        <Text style={styles.dynTime} numberOfLines={1}>
-          {time}
-        </Text>
+        </Tappable>
+      </View>
+
+      <ScrollView ref={listRef} style={styles.betweenList} showsVerticalScrollIndicator={false}>
+        {cfg.options.map((o, i) => {
+          const edge = o.id === DAY_START_ID || o.id === DAY_END_ID;
+          const ok = slot === 'after' ? validAfter(o) : validUntil(o, A);
+          const isA = o.id === aId;
+          const isB = o.id === bId;
+          return (
+            <View key={o.id} onLayout={(ev) => onRowLayout(o.id, ev.nativeEvent.layout.y)}>
+            <Appear delay={20 + i * 22} from="up" distance={8}>
+              <Tappable onPress={() => pick(o)} disabled={!ok} style={[styles.betweenRow, (isA || isB) && styles.betweenRowOn, !ok && !isA && !isB && { opacity: 0.35 }]}>
+                {edge ? (
+                  <Feather name={o.id === DAY_START_ID ? 'sunrise' : 'sunset'} size={14} color={C.muted} />
+                ) : (
+                  <View style={[styles.betweenRail, { backgroundColor: o.color }]} />
+                )}
+                <Text style={styles.betweenName} numberOfLines={1}>
+                  {o.title}
+                </Text>
+                <Text style={styles.betweenTime}>{edge ? f(o.start) : `${f(o.start)} – ${f(o.end)}`}</Text>
+                {(isA || isB) && (
+                  <View style={styles.betweenBadge}>
+                    <Text style={styles.betweenBadgeTxt}>{isA ? 'AFTER' : 'UNTIL'}</Text>
+                  </View>
+                )}
+              </Tappable>
+            </Appear>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      <View style={[styles.betweenResult, done && styles.betweenResultOn]}>
+        {done ? (
+          <>
+            <Feather name="check" size={15} color={C.accentB} />
+            <Text style={styles.betweenResultTxt}>
+              {f(A!.end)} – {f(B!.start)} · {fmtDur(B!.start - A!.end)}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.betweenHint}>{slot === 'after' || !A ? 'Tap the task to start after' : `Now tap the task to end before`}</Text>
+        )}
+      </View>
+
+      <Tappable onPress={onBack} style={styles.backRow}>
+        <Feather name="chevron-left" size={16} color={C.textDim} />
+        <Text style={styles.backTxt}>Back to duration</Text>
       </Tappable>
-    </Appear>
+    </>
   );
 }
 
-// A small vertical schematic of the result: anchor ▸ gap ▸ this task (or the
-// reverse for "until next"). The gap stretches with the chosen minutes.
-function DynDiagram({ dyn, offset, clock }: { dyn: Dyn; offset: number; clock: Clock }) {
-  const { s, e } = dynRange(dyn, offset);
+// A small vertical schematic of a pin: anchor ▸ gap ▸ this task (or the
+// reverse for "until"). The gap stretches with the chosen minutes.
+function PinDiagram({ kind, anchor, gap, s, e, clock }: { kind: 'after' | 'until'; anchor: Neighbor; gap: number; s: number; e: number; clock: Clock }) {
   const f = (v: number) => fmt(v, clock);
   const gapH = useSharedValue(16);
   useEffect(() => {
-    gapH.value = withSpring(16 + Math.min(1, offset / 120) * 22, { damping: 16, stiffness: 220 });
+    gapH.value = withSpring(16 + Math.min(1, gap / 120) * 22, sp({ damping: 16, stiffness: 220 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offset]);
+  }, [gap]);
   const gapStyle = useAnimatedStyle(() => ({ height: gapH.value }));
+  const edge = anchor.id === DAY_START_ID || anchor.id === DAY_END_ID;
+  const after = kind === 'after';
 
-  const anchor = (
+  const anchorRow = (
     <View style={styles.diaRow}>
-      <View style={[styles.diaRail, { backgroundColor: dyn.who ? dyn.who.color : C.faint }]} />
+      <View style={[styles.diaRail, { backgroundColor: edge ? C.faint : anchor.color }]} />
       <Text style={styles.diaName} numberOfLines={1}>
-        {dyn.who ? dyn.who.title : dyn.mode === 'after' ? 'Day start' : 'Day end'}
+        {anchor.title}
       </Text>
-      <Text style={styles.diaTime}>{dyn.who ? (dyn.mode === 'after' ? `ends ${f(dyn.at)}` : `starts ${f(dyn.at)}`) : f(dyn.at)}</Text>
+      <Text style={styles.diaTime}>{edge ? f(anchor.start) : after ? `ends ${f(anchor.end)}` : `starts ${f(anchor.start)}`}</Text>
     </View>
   );
   const self = (
@@ -525,34 +700,34 @@ function DynDiagram({ dyn, offset, clock }: { dyn: Dyn; offset: number; clock: C
       <View style={[styles.diaRail, { backgroundColor: C.accentB }]} />
       <View style={{ flex: 1 }}>
         <Text style={[styles.diaName, { color: C.text }]}>This task</Text>
-        <Text style={styles.diaSub}>{fmtDur(e - s)}</Text>
+        <Text style={styles.diaSub}>{fmtDur(Math.max(0, e - s))}</Text>
       </View>
       <Text style={[styles.diaTime, { color: C.text }]}>
         {f(s)} – {f(e)}
       </Text>
     </View>
   );
-  const gap = (
+  const gapRow = (
     <Animated.View style={[styles.diaGap, gapStyle]}>
       <Svg width={7} height="100%">
         <SvgLine x1={3.5} y1={2} x2={3.5} y2="100%" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeDasharray="2.5 3" strokeLinecap="round" />
       </Svg>
-      <Text style={styles.diaGapTxt}>{offset === 0 ? (dyn.mode === 'after' ? 'right after' : 'right before') : `${fmtDur(offset)} gap`}</Text>
+      <Text style={styles.diaGapTxt}>{gap === 0 ? (after ? 'right after' : 'right before') : `${fmtDur(gap)} gap`}</Text>
     </Animated.View>
   );
   return (
     <View style={styles.dia}>
-      {dyn.mode === 'after' ? (
+      {after ? (
         <>
-          {anchor}
-          {gap}
+          {anchorRow}
+          {gapRow}
           {self}
         </>
       ) : (
         <>
           {self}
-          {gap}
-          {anchor}
+          {gapRow}
+          {anchorRow}
         </>
       )}
     </View>
@@ -762,15 +937,38 @@ const styles = StyleSheet.create({
   dynHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 20, marginBottom: 10 },
   dynLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' },
   dynLabel: { fontSize: 11, color: C.muted, fontWeight: '700', letterSpacing: 0.5 },
-  dynRow: { flexDirection: 'row', gap: 8 },
-  dynCard: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: 'rgba(79,209,197,0.08)', boxShadow: 'inset 0 0 0 1px rgba(79,209,197,0.22)' },
-  dynCardOff: { opacity: 0.4 },
-  dynCardTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dynCardLabel: { flex: 1, fontSize: 13, fontWeight: '800', color: C.accentB },
-  dynWhoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  dynWhoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   dynWhoDot: { width: 7, height: 7, borderRadius: 4 },
-  dynWho: { flex: 1, fontSize: 12.5, fontWeight: '600', color: C.textDim },
-  dynTime: { fontSize: 11.5, fontWeight: '600', color: C.muted, marginTop: 3, fontVariant: ['tabular-nums'] },
+  // "After task" / "Until task" / "In between" entry cards (same base; the
+  // "On" state has a matching transparent-free shadow so it never sticks)
+  anchorCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: 'rgba(79,209,197,0.07)', boxShadow: 'inset 0 0 0 1px rgba(79,209,197,0.2)' },
+  anchorCardOn: { backgroundColor: 'rgba(79,209,197,0.14)', boxShadow: 'inset 0 0 0 1.5px rgba(79,209,197,0.55)' },
+  anchorIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(79,209,197,0.14)', alignItems: 'center', justifyContent: 'center' },
+  anchorLabel: { fontSize: 14, fontWeight: '800', color: C.accentB },
+  anchorSub: { flexShrink: 1, fontSize: 12.5, fontWeight: '600', color: C.textDim },
+  anchorChipsBox: { marginHorizontal: -20, marginBottom: 12, flexGrow: 0 },
+  anchorChips: { gap: 8, paddingHorizontal: 20 },
+  anchorChip: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', maxWidth: 190 },
+  anchorChipOn: { backgroundColor: C.accentB },
+  anchorChipTxt: { fontSize: 13, fontWeight: '700', color: C.text, maxWidth: 140 },
+  anchorChipTime: { fontSize: 11, fontWeight: '600', color: C.muted, fontVariant: ['tabular-nums'] },
+  slotRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  slotPill: { flex: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.05)', boxShadow: 'inset 0 0 0 1.5px rgba(79,209,197,0)' },
+  slotPillOn: { backgroundColor: 'rgba(79,209,197,0.1)', boxShadow: 'inset 0 0 0 1.5px rgba(79,209,197,0.6)' },
+  slotKind: { fontSize: 10, fontWeight: '800', color: C.accentB, letterSpacing: 0.6 },
+  slotName: { fontSize: 13.5, fontWeight: '700', color: C.text, marginTop: 2 },
+  betweenList: { maxHeight: 250 },
+  betweenRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 12, marginBottom: 4 },
+  betweenRowOn: { backgroundColor: 'rgba(79,209,197,0.12)' },
+  betweenRail: { width: 4, height: 18, borderRadius: 2 },
+  betweenName: { flex: 1, fontSize: 14, fontWeight: '600', color: C.text },
+  betweenTime: { fontSize: 12, fontWeight: '600', color: C.muted, fontVariant: ['tabular-nums'] },
+  betweenBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: C.accentB },
+  betweenBadgeTxt: { fontSize: 9.5, fontWeight: '800', color: '#0b0b0d', letterSpacing: 0.4 },
+  betweenResult: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 10, paddingVertical: 11, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)' },
+  betweenResultOn: { backgroundColor: 'rgba(79,209,197,0.12)' },
+  betweenResultTxt: { fontSize: 14, fontWeight: '800', color: C.text, fontVariant: ['tabular-nums'] },
+  betweenHint: { fontSize: 12.5, fontWeight: '600', color: C.muted },
   dynPageHead: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12, marginLeft: -6 },
   dynBack: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   dynTitle: { fontSize: 14.5, fontWeight: '700', color: C.text },

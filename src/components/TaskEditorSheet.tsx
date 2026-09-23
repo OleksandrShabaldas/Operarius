@@ -768,7 +768,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, marginBottom: 10 },
   rowIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: C.textDim },
-  rowValue: { fontSize: 15, fontWeight: '700', maxWidth: '52%', fontVariant: ['tabular-nums'] },
+  // paddingRight: layout rounding can shave the last pixel off a content-sized
+  // single-line text, and Android then ellipsizes it ("30 m…") — 1dp absorbs that.
+  rowValue: { fontSize: 15, fontWeight: '700', maxWidth: '52%', fontVariant: ['tabular-nums'], paddingRight: 1 },
   remVal: { alignItems: 'flex-end', maxWidth: '56%' },
   remValTxt: { maxWidth: '100%' },
   remSub: { fontSize: 11, fontWeight: '800', marginTop: 2, letterSpacing: 0.3 },

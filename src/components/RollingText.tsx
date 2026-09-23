@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleProp, Text, TextStyle, ViewStyle } from 'react-native';
 import Animated, { Easing, interpolate, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { ms } from '../motion';
 
 // One character position. Rolls vertically from `from` to `to` (up when moving
 // forward, down when moving back), like an odometer / split-flap. The slot is a
@@ -24,8 +25,8 @@ function RollColumn({ slot, height, glyph, onDone }: { slot: Slot; height: numbe
   useEffect(() => {
     const { id, ver } = slot;
     p.value = withDelay(
-      slot.delay,
-      withTiming(1, { duration: DURATION, easing: Easing.out(Easing.cubic) }, (f) => {
+      ms(slot.delay),
+      withTiming(1, { duration: ms(DURATION), easing: Easing.out(Easing.cubic) }, (f) => {
         'worklet';
         if (f) runOnJS(onDone)(id, ver);
       })
@@ -48,7 +49,7 @@ function RollColumn({ slot, height, glyph, onDone }: { slot: Slot; height: numbe
 function RollingChar({ slot, height, textStyle, onDone }: { slot: Slot; height: number; textStyle: GlyphStyle; onDone: (id: number, ver: number) => void }) {
   const glyph = [textStyle, { height, lineHeight: height, textAlign: 'center' as const, includeFontPadding: false }];
   return (
-    <Animated.View layout={LinearTransition.duration(260)} style={{ height, overflow: 'hidden' }}>
+    <Animated.View layout={LinearTransition.duration(ms(260))} style={{ height, overflow: 'hidden' }}>
       {slot.from === slot.to ? (
         // Settled: a single plain glyph (nothing hidden to bleed, and screen
         // readers read the text once).
@@ -120,7 +121,7 @@ export function RollingText({
   }, []);
 
   return (
-    <Animated.View layout={LinearTransition.duration(260)} style={[{ flexDirection: 'row' }, style]}>
+    <Animated.View layout={LinearTransition.duration(ms(260))} style={[{ flexDirection: 'row' }, style]}>
       {slots.map((s) => (
         <RollingChar key={s.id} slot={s} height={height} textStyle={textStyle} onDone={onDone} />
       ))}

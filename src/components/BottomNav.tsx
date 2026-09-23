@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
+import { sp } from '../motion';
 import { Tappable } from './anim';
 
 export type Tab = 'today' | 'todo';
@@ -46,7 +47,7 @@ function NavItem({
 }) {
   const s = useSharedValue(1);
   useEffect(() => {
-    s.value = withSpring(active ? 1.14 : 1, { mass: 0.5, damping: 10, stiffness: 220 });
+    s.value = withSpring(active ? 1.14 : 1, sp({ mass: 0.5, damping: 10, stiffness: 220 }));
   }, [active, s]);
   const aStyle = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
   return (

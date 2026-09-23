@@ -17,6 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
+import { ms, sp, spW } from '../motion';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -46,9 +47,9 @@ export function BottomSheet({
   useEffect(() => {
     if (open) {
       setMounted(true);
-      ty.value = withSpring(0, { damping: 24, stiffness: 240, mass: 0.9 });
+      ty.value = withSpring(0, sp({ damping: 24, stiffness: 240, mass: 0.9 }));
     } else {
-      ty.value = withTiming(winH, { duration: 250, easing: Easing.in(Easing.cubic) }, (f) => {
+      ty.value = withTiming(winH, { duration: ms(250), easing: Easing.in(Easing.cubic) }, (f) => {
         'worklet';
         if (f) runOnJS(setMounted)(false);
       });
@@ -66,7 +67,7 @@ export function BottomSheet({
       if (e.translationY > 120 || e.velocityY > 900) {
         runOnJS(onClose)();
       } else {
-        ty.value = withSpring(0, { damping: 24, stiffness: 260 });
+        ty.value = withSpring(0, spW({ damping: 24, stiffness: 260 }));
       }
     });
 
@@ -123,7 +124,7 @@ export function CenterPopup({
       setMounted(true);
       return;
     }
-    const t = setTimeout(() => setMounted(false), 320);
+    const t = setTimeout(() => setMounted(false), ms(320) + 40);
     return () => clearTimeout(t);
   }, [open]);
   if (!mounted) return <Modal visible={false} transparent />;
@@ -134,10 +135,10 @@ export function CenterPopup({
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fillCenter}>
           {open ? (
             <>
-              <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(160)} exiting={FadeOut.duration(180)} onPress={onClose} />
+              <AnimatedPressable style={styles.backdrop} entering={FadeIn.duration(ms(160))} exiting={FadeOut.duration(ms(180))} onPress={onClose} />
               <Animated.View
-                entering={ZoomIn.duration(220).easing(Easing.out(Easing.cubic))}
-                exiting={ZoomOut.duration(170).withCallback((f) => {
+                entering={ZoomIn.duration(ms(220)).easing(Easing.out(Easing.cubic))}
+                exiting={ZoomOut.duration(ms(170)).withCallback((f) => {
                   'worklet';
                   if (f) runOnJS(setMounted)(false);
                 })}

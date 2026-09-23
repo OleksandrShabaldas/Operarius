@@ -9,6 +9,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { ms, sp } from '../motion';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -41,7 +42,7 @@ export function Tappable({
   const baseOpacity = (StyleSheet.flatten(style)?.opacity as number | undefined) ?? 1;
   const base = useSharedValue(baseOpacity);
   useEffect(() => {
-    base.value = withTiming(baseOpacity, { duration: 180 });
+    base.value = withTiming(baseOpacity, { duration: ms(180) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseOpacity]);
   const aStyle = useAnimatedStyle(() => ({ transform: [{ scale: s.value }], opacity: o.value * base.value }));
@@ -52,12 +53,12 @@ export function Tappable({
       disabled={disabled}
       hitSlop={hitSlop}
       onPressIn={() => {
-        s.value = withSpring(scaleTo, { mass: 0.4, damping: 14, stiffness: 420 });
-        o.value = withSpring(dimTo, { mass: 0.4, damping: 14, stiffness: 420 });
+        s.value = withSpring(scaleTo, sp({ mass: 0.4, damping: 14, stiffness: 420 }));
+        o.value = withSpring(dimTo, sp({ mass: 0.4, damping: 14, stiffness: 420 }));
       }}
       onPressOut={() => {
-        s.value = withSpring(1, { mass: 0.5, damping: 12, stiffness: 300 });
-        o.value = withSpring(1, { mass: 0.5, damping: 12, stiffness: 300 });
+        s.value = withSpring(1, sp({ mass: 0.5, damping: 12, stiffness: 300 }));
+        o.value = withSpring(1, sp({ mass: 0.5, damping: 12, stiffness: 300 }));
       }}
       style={[style, aStyle]}
       {...rest}>
@@ -69,10 +70,11 @@ export function Tappable({
 // Staggered entrance for a list item at `index` — each element animates in
 // separately for a premium, cascading feel.
 export function stagger(index: number, base = 24, step = 26) {
+  const k = sp({ damping: 19, stiffness: 210 });
   return FadeInDown.springify()
-    .damping(19)
-    .stiffness(210)
-    .delay(base + index * step)
+    .damping(k.damping)
+    .stiffness(k.stiffness)
+    .delay(ms(base + index * step))
     .withInitialValues({ transform: [{ translateY: 11 }], opacity: 0 });
 }
 
@@ -96,7 +98,7 @@ export function Appear({
 }) {
   const p = useSharedValue(0);
   useEffect(() => {
-    p.value = withDelay(delay, withSpring(1, { damping: 17, stiffness: 230, mass: 0.7 }));
+    p.value = withDelay(ms(delay), withSpring(1, sp({ damping: 17, stiffness: 230, mass: 0.7 })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const a = useAnimatedStyle(() => {

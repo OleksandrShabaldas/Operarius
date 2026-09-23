@@ -4,7 +4,25 @@ import Svg, { Defs, G, Line, LinearGradient, Mask, RadialGradient, Rect, Stop } 
 
 let seq = 0;
 
-export type StripeFade = 'radial' | { top?: number; bottom?: number; left?: number; right?: number };
+export type StripeFade = 'radial' | 'radial-soft' | { top?: number; bottom?: number; left?: number; right?: number };
+
+// Opacity stops (offset → alpha) for the radial fades. "soft" keeps a gentle
+// plateau around the centre and then eases out over a long tail, so a halo
+// dissolves gradually instead of ending in a visible ring.
+const RADIAL: Record<'radial' | 'radial-soft', [number, number][]> = {
+  radial: [
+    [0, 1],
+    [0.55, 0.55],
+    [1, 0],
+  ],
+  'radial-soft': [
+    [0, 1],
+    [0.42, 0.7],
+    [0.66, 0.26],
+    [0.84, 0.07],
+    [1, 0],
+  ],
+};
 
 // Thin diagonal stripes that fade out through an alpha mask, so they dissolve
 // into whatever sits behind them (cards, bands, any colour) instead of fading to
@@ -38,7 +56,8 @@ export function Stripes({
     for (let x = -h; x < w + h; x += spacing) {
       lines.push(<Line key={x} x1={x} y1={h} x2={x + h} y2={0} stroke={color} strokeWidth={strokeWidth} strokeOpacity={opacity} />);
     }
-    const edges = fade && fade !== 'radial' ? fade : null;
+    const radial = fade === 'radial' || fade === 'radial-soft' ? fade : null;
+    const edges = fade && !radial && typeof fade === 'object' ? fade : null;
     const t = edges?.top ?? 0;
     const b = edges?.bottom ?? 0;
     const l = edges?.left ?? 0;
@@ -46,11 +65,11 @@ export function Stripes({
     body = (
       <Svg width={w} height={h}>
         <Defs>
-          {fade === 'radial' && (
+          {radial && (
             <RadialGradient id={`${id}g`} cx="50%" cy="50%" r="50%">
-              <Stop offset="0" stopColor="#fff" stopOpacity={1} />
-              <Stop offset="0.55" stopColor="#fff" stopOpacity={0.55} />
-              <Stop offset="1" stopColor="#fff" stopOpacity={0} />
+              {RADIAL[radial].map(([o, a]) => (
+                <Stop key={o} offset={o} stopColor="#fff" stopOpacity={a} />
+              ))}
             </RadialGradient>
           )}
           {edges && (
@@ -69,7 +88,7 @@ export function Stripes({
               </LinearGradient>
             </>
           )}
-          {fade === 'radial' && (
+          {radial && (
             <Mask id={`${id}m`} maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
               <Rect x="0" y="0" width={w} height={h} fill={`url(#${id}g)`} />
             </Mask>
@@ -85,7 +104,7 @@ export function Stripes({
             </>
           )}
         </Defs>
-        {fade === 'radial' ? (
+        {radial ? (
           <G mask={`url(#${id}m)`}>{lines}</G>
         ) : edges ? (
           <G mask={`url(#${id}mv)`}>

@@ -6,15 +6,17 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
+import { ms, sp } from '../motion';
 import { Task, TaskType } from '../types';
 import { useApp } from '../store';
 import { addDays, headerParts, hexA, todayKey } from '../utils';
 import { expandForDay } from '../recurrence';
-import { cardHeight, computeDayLayout, resolvePushApart } from '../layout';
+import { buildDragRuler, cardHeight, computeDayLayout, DragRuler, resolvePushApart } from '../layout';
 import { DayDot, WeekStrip } from '../components/WeekStrip';
 import { DraggedCard, Timeline } from '../components/Timeline';
 import { DayState } from '../components/TaskCard';
 import { RollingText } from '../components/RollingText';
+import { MonthView } from '../components/MonthView';
 import { Tappable } from '../components/anim';
 
 type Props = {
@@ -46,6 +48,17 @@ function useNowMinute(): number {
 
 const EDGE = 84; // auto-scroll zone at the top/bottom of the timeline while dragging
 const MAX_SPEED = 13; // px per frame at the very edge
+
+// Everything about the card being held, built once when it's picked up.
+type DragCtx = { id: string; task: Task; others: Task[]; ruler: DragRuler; baseY: number };
+
+// Where the held card will actually land for a finger time: exactly there
+// (overlap allowed), or beside whatever it hits (Push apart). Putting it back
+// at its own time is always a no-op.
+function landing(c: DragCtx, min: number, pushApart: boolean): number {
+  if (min === c.task.start || !pushApart) return min;
+  return resolvePushApart(min, c.task.dur, c.others);
+}
 
 export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSettings, onNewTask, onOpenInfo, todayPing }: Props) {
   const insets = useSafeAreaInsets();
@@ -80,12 +93,12 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
     prevKeyRef.current = selectedKey;
     if (sourceRef.current === 'week') {
       contentO.value = 0.2;
-      contentO.value = withTiming(1, { duration: 260 });
+      contentO.value = withTiming(1, { duration: ms(260) });
     } else {
       contentX.value = dir * 26;
-      contentX.value = withSpring(0, { damping: 20, stiffness: 190 });
+      contentX.value = withSpring(0, sp({ damping: 20, stiffness: 190 }));
       contentO.value = 0.35;
-      contentO.value = withTiming(1, { duration: 240 });
+      contentO.value = withTiming(1, { duration: ms(240) });
     }
     sourceRef.current = 'tap';
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,30 +140,31 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   );
 
   // ---- Layout + dragging --------------------------------------------------
-  // While a card is lifted, the rest of the day is laid out WITHOUT it (the
-  // hole closes once, then stays put). The finger maps to a time through that
-  // layout's own ruler, so the landing time matches what you see.
-  const [drag, setDrag] = useState<{ id: string; min: number } | null>(null);
-  const dragId = drag?.id ?? null;
-  const layout = useMemo(
-    () => computeDayLayout(dragId ? planned.filter((t) => t.id !== dragId) : planned, settings.dayStart, settings.dayEnd, settings.gapThreshold),
-    [planned, dragId, settings.dayStart, settings.dayEnd, settings.gapThreshold]
+  // While a card is held, the day is drawn as it WILL look with the card landed
+  // at the current time: room opens for it, overlaps fuse with their band, the
+  // card is shown collapsed. So what you see while dragging is exactly the
+  // result — nothing collapses on lift or stretches on drop. The finger maps to
+  // a time through the drag ruler built for that preview (see layout.ts).
+  const fullLayout = useMemo(
+    () => computeDayLayout(planned, settings.dayStart, settings.dayEnd, settings.gapThreshold),
+    [planned, settings.dayStart, settings.dayEnd, settings.gapThreshold]
   );
-  const dragTask: Task | null = dragId ? planned.find((t) => t.id === dragId) ?? null : null;
-  const dragBaseY = dragTask ? layout.yAt(dragTask.start) : null;
-  const others = useMemo(() => (dragId ? planned.filter((t) => t.id !== dragId) : planned), [planned, dragId]);
+  const [drag, setDrag] = useState<{ id: string; min: number } | null>(null);
+  const ctxRef = useRef<DragCtx | null>(null);
+  const ctx = drag && ctxRef.current && ctxRef.current.id === drag.id ? ctxRef.current : null;
 
+  let layout = fullLayout;
   let dragged: DraggedCard | null = null;
-  if (drag && dragTask && dragBaseY != null) {
-    const land = settings.swapOnDrag && drag.min !== dragTask.start ? resolvePushApart(drag.min, dragTask.dur, others) : drag.min;
-    // Preview where it will actually settle (e.g. fused below a task it overlaps).
-    const preview = computeDayLayout([...others, { ...dragTask, start: land }], settings.dayStart, settings.dayEnd, settings.gapThreshold);
-    dragged = { task: dragTask, h: cardHeight(dragTask), baseY: dragBaseY, liveStart: land, ghostTop: preview.pos[dragTask.id]?.top ?? layout.yAt(land) };
+  if (drag && ctx) {
+    const land = landing(ctx, drag.min, settings.swapOnDrag);
+    layout = ctx.ruler.layoutAt(land);
+    const slot = layout.pos[ctx.id] ?? { top: ctx.baseY, h: cardHeight(ctx.task) };
+    dragged = { task: ctx.task, h: slot.h, baseY: ctx.baseY, liveStart: land, slot };
   }
 
   // Latest values for the (stable) drag callbacks.
-  const live = useRef({ layout, dragBaseY, planned, others, settings, viewportH });
-  live.current = { layout, dragBaseY, planned, others, settings, viewportH };
+  const live = useRef({ layout, planned, settings, viewportH });
+  live.current = { layout, planned, settings, viewportH };
 
   const scrollRef = useRef<any>(null);
   const viewportRef = useRef<View>(null);
@@ -168,11 +182,12 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
 
   const recompute = useCallback((scrollOverride?: number) => {
     const d = dragRef.current;
-    const { layout: L, dragBaseY: base, settings: S } = live.current;
-    if (!d || base == null) return;
+    const c = ctxRef.current;
+    const { settings: S } = live.current;
+    if (!d || !c) return;
     const sy = scrollOverride ?? scrollY.value;
-    const y = base + dyRef.current + (sy - scrollAtStart.current);
-    let m = Math.round(L.yToMin(y) / 5) * 5;
+    const y = c.baseY + dyRef.current + (sy - scrollAtStart.current);
+    let m = Math.round(c.ruler.minOf(y) / 5) * 5;
     m = Math.max(S.dayStart, Math.min(S.dayEnd - 5, m));
     if (m !== d.min) {
       dragRef.current = { id: d.id, min: m };
@@ -208,8 +223,14 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   }, []);
 
   const onDragStart = useCallback((id: string) => {
-    const t = live.current.planned.find((x) => x.id === id);
+    const { planned: P, settings: S } = live.current;
+    const t = P.find((x) => x.id === id);
     if (!t) return;
+    // Held cards are shown collapsed (subtasks folded) to stay compact.
+    const task = { ...t, expanded: false };
+    const others = P.filter((x) => x.id !== id);
+    const ruler = buildDragRuler(task, others, S.dayStart, S.dayEnd, S.gapThreshold);
+    ctxRef.current = { id, task, others, ruler, baseY: ruler.yOf(t.start) };
     dragRef.current = { id, min: t.start };
     dyRef.current = 0;
     scrollAtStart.current = scrollY.value;
@@ -238,16 +259,13 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
         cancelAnimationFrame(raf.current);
         raf.current = null;
       }
-      if (d && d.id === id) {
-        const { planned: P, others: O, settings: S } = live.current;
-        const t = P.find((x) => x.id === id);
-        // Dropped where it was picked up → nothing to do (no push-apart either).
-        if (t && d.min !== t.start) {
-          const land = S.swapOnDrag ? resolvePushApart(d.min, t.dur, O) : d.min;
-          if (land !== t.start) moveTask(id, land);
-        }
+      const c = ctxRef.current;
+      if (d && c && d.id === id) {
+        const land = landing(c, d.min, live.current.settings.swapOnDrag);
+        if (land !== c.task.start) moveTask(id, land);
       }
       setDrag(null);
+      ctxRef.current = null;
     },
     [moveTask]
   );
@@ -276,11 +294,30 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   });
 
   // ---- "Today" button (shown whenever another day is open) ----------------
-  const todayVis = useSharedValue(isToday ? 0 : 1);
+  // ---- Month view (tap the big date) -----------------------------------------
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [monthTop, setMonthTop] = useState(0);
+  const chev = useSharedValue(0);
   useEffect(() => {
-    todayVis.value = withSpring(isToday ? 0 : 1, { damping: 18, stiffness: 230 });
+    chev.value = withSpring(monthOpen ? 1 : 0, sp({ damping: 16, stiffness: 240 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isToday]);
+  }, [monthOpen]);
+  const chevStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `deg` }] }));
+  const closeMonth = useCallback(() => setMonthOpen(false), []);
+  const pickFromMonth = useCallback(
+    (key: string) => {
+      setMonthOpen(false);
+      if (key !== selectedKey) go(key, 'tap');
+    },
+    [go, selectedKey]
+  );
+
+  const todayVis = useSharedValue(isToday ? 0 : 1);
+  const showToday = !isToday && !monthOpen;
+  useEffect(() => {
+    todayVis.value = withSpring(showToday ? 1 : 0, sp({ damping: 18, stiffness: 230 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showToday]);
   const todayStyle = useAnimatedStyle(() => ({
     opacity: todayVis.value,
     transform: [{ translateY: (1 - todayVis.value) * -12 }, { scale: 0.86 + 0.14 * todayVis.value }],
@@ -304,14 +341,21 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   }, [todayPing]);
 
   return (
-    <View style={styles.root}>
+    // collapsable={false}: keep this view in the native tree so the floating
+    // pill's zIndex stays scoped to the Today screen (a flattened parent would
+    // let it compete with — and draw over — Settings and Insights).
+    <View style={styles.root} collapsable={false}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]} onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
-        <View style={styles.headerRow}>
-          <View style={styles.dateRow}>
+        <View style={styles.headerRow} onLayout={(e) => setMonthTop(e.nativeEvent.layout.y + e.nativeEvent.layout.height + 8)}>
+          {/* Tap the date for the month view. */}
+          <Tappable onPress={() => setMonthOpen((o) => !o)} scaleTo={0.97} dimTo={0.85} hitSlop={6} style={styles.dateRow}>
             <RollingText text={String(dayNum)} dir={dir} height={44} align="right" textStyle={styles.dayNum} />
             <RollingText text={weekday} dir={dir} height={28} textStyle={styles.weekday} style={styles.weekdayBox} />
             <RollingText text={month} dir={dir} height={20} textStyle={styles.month} style={styles.monthBox} />
-          </View>
+            <Animated.View style={[styles.monthChev, chevStyle]}>
+              <Feather name="chevron-down" size={15} color={C.muted} />
+            </Animated.View>
+          </Tappable>
           <View style={styles.headBtns}>
             <Tappable style={styles.headBtn} onPress={onOpenStats} hitSlop={6}>
               <Feather name="bar-chart-2" size={17} color={C.textDim} />
@@ -394,7 +438,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
       </GestureDetector>
 
       {/* Back-to-today pill, floating just under the week strip */}
-      <Animated.View pointerEvents={isToday ? 'none' : 'box-none'} style={[styles.todayWrap, { top: headerH + (allday.length > 0 ? alldayH : 0) + 6 }, todayStyle]}>
+      <Animated.View pointerEvents={showToday ? 'box-none' : 'none'} style={[styles.todayWrap, { top: headerH + (allday.length > 0 ? alldayH : 0) + 6 }, todayStyle]}>
         <Tappable onPress={goToday} style={styles.todayPill} hitSlop={8}>
           {selectedKey > today && <Feather name="chevron-left" size={15} color={C.accentB} />}
           <Feather name="calendar" size={13} color={C.accentB} />
@@ -402,6 +446,11 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           {selectedKey < today && <Feather name="chevron-right" size={15} color={C.accentB} />}
         </Tappable>
       </Animated.View>
+
+      {/* Month view, dropping down from under the date (above everything here). */}
+      <View pointerEvents="box-none" style={styles.monthLayer}>
+        <MonthView open={monthOpen} top={monthTop} selectedKey={selectedKey} weekStart={settings.weekStart} dotsFor={dotsFor} onPick={pickFromMonth} onClose={closeMonth} />
+      </View>
     </View>
   );
 }
@@ -418,6 +467,8 @@ const styles = StyleSheet.create({
   month: { fontSize: 15, fontWeight: '500', color: '#7a7a82' },
   weekdayBox: { marginLeft: 9, marginBottom: 3 },
   monthBox: { marginLeft: 9, marginBottom: 5 },
+  monthChev: { marginLeft: 4, marginBottom: 7 },
+  monthLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 },
   headBtns: { flexDirection: 'row', gap: 10 },
   headBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   alldayScroll: { maxHeight: 56, flexGrow: 0 },

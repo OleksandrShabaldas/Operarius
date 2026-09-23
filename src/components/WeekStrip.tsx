@@ -19,44 +19,54 @@ type Props = {
 };
 
 const WEEKS = 520; // ±10 years of pages
-const DOT = 5;
-const DOT_GAP = 3;
-const PER_ROW = 4;
-const MAX_DOTS = 8;
-const DOTS_W = PER_ROW * DOT + (PER_ROW - 1) * DOT_GAP;
-const DOTS_H = 2 * DOT + DOT_GAP;
 
-function Dots({ dots }: { dots: DayDot[] }) {
-  if (dots.length === 0) return <View style={{ width: DOTS_W, height: DOTS_H }} />;
+// Up to 12 dots: one row of up to 6, then two balanced rows. The busier the
+// day, the smaller and tighter the dots, so a full day stays a compact cluster.
+// More than 12 tasks → 11 dots and a "+".
+const MAX_DOTS = 12;
+const PER_ROW = 6;
+const DOTS_W = 38;
+const DOTS_H = 12;
+const DOT_SIZE = [5, 5, 5, 5, 5, 4.6, 4.2]; // by dots in the widest row
+const DOT_GAP = [0, 0, 4, 3.4, 2.8, 2.2, 1.7];
+
+export function Dots({ dots, width = DOTS_W, height = DOTS_H }: { dots: DayDot[]; width?: number; height?: number }) {
+  if (dots.length === 0) return <View style={{ width, height }} />;
   const overflow = dots.length > MAX_DOTS;
   const shown = overflow ? dots.slice(0, MAX_DOTS - 1) : dots;
   const count = shown.length + (overflow ? 1 : 0);
-  const rows = Math.ceil(count / PER_ROW);
-  const y0 = rows === 1 ? (DOTS_H - DOT) / 2 : 0;
+  const rows = count > PER_ROW ? 2 : 1;
+  const perRow = Math.ceil(count / rows);
+  const size = DOT_SIZE[perRow];
+  const gap = DOT_GAP[perRow];
+  const rowGap = 2.2;
   const pos = (i: number) => {
-    const r = Math.floor(i / PER_ROW);
-    const c = i % PER_ROW;
-    const inRow = Math.min(PER_ROW, count - r * PER_ROW);
-    const rowW = inRow * DOT + (inRow - 1) * DOT_GAP;
-    return { cx: (DOTS_W - rowW) / 2 + c * (DOT + DOT_GAP) + DOT / 2, cy: y0 + r * (DOT + DOT_GAP) + DOT / 2 };
+    const r = Math.floor(i / perRow);
+    const c = i % perRow;
+    const inRow = r === 0 ? Math.min(perRow, count) : count - perRow;
+    const rowW = inRow * size + (inRow - 1) * gap;
+    const cy = rows === 1 ? height / 2 : height / 2 + (r === 0 ? -1 : 1) * ((size + rowGap) / 2);
+    return { cx: (width - rowW) / 2 + c * (size + gap) + size / 2, cy };
   };
+  const stroke = size < 4.8 ? 1.15 : 1.3;
   return (
-    <Svg width={DOTS_W} height={DOTS_H}>
+    <Svg width={width} height={height}>
       {shown.map((d, i) => {
         const { cx, cy } = pos(i);
         return d.done ? (
-          <Circle key={i} cx={cx} cy={cy} r={DOT / 2} fill={d.color} />
+          <Circle key={i} cx={cx} cy={cy} r={size / 2} fill={d.color} />
         ) : (
-          <Circle key={i} cx={cx} cy={cy} r={DOT / 2 - 0.65} fill="none" stroke={d.color} strokeWidth={1.3} />
+          <Circle key={i} cx={cx} cy={cy} r={size / 2 - stroke / 2} fill="none" stroke={d.color} strokeWidth={stroke} />
         );
       })}
       {overflow &&
         (() => {
           const { cx, cy } = pos(shown.length);
+          const a = size / 2 - 0.2;
           return (
             <>
-              <Line x1={cx - 2.2} y1={cy} x2={cx + 2.2} y2={cy} stroke={C.muted} strokeWidth={1.3} />
-              <Line x1={cx} y1={cy - 2.2} x2={cx} y2={cy + 2.2} stroke={C.muted} strokeWidth={1.3} />
+              <Line x1={cx - a} y1={cy} x2={cx + a} y2={cy} stroke={C.muted} strokeWidth={1.2} strokeLinecap="round" />
+              <Line x1={cx} y1={cy - a} x2={cx} y2={cy + a} stroke={C.muted} strokeWidth={1.2} strokeLinecap="round" />
             </>
           );
         })()}

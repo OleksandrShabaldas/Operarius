@@ -5,18 +5,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { Clock, Task, Tag, Place } from '../types';
 import { C, TOPBAND } from '../theme';
+import { ms } from '../motion';
 import { fmt, fmtDur, hexA } from '../utils';
-import { DayLayout, OverlapBand } from '../layout';
+import { DayLayout, OverlapBand, Pos } from '../layout';
 import { Hatch } from './Hatch';
 import { Stripes } from './Stripes';
 import { TaskCard, DayState } from './TaskCard';
 
 export type DraggedCard = {
-  task: Task;
+  task: Task; // shown collapsed while held
   h: number;
-  baseY: number; // where the task's original time sits in the lifted layout
+  baseY: number; // where the held card's original time sits on the drag ruler
   liveStart: number; // the time it would land on
-  ghostTop: number; // landing slot preview
+  slot: Pos; // its landing slot in the (preview) layout the day is drawn with
 };
 
 type Props = {
@@ -56,9 +57,10 @@ const Spine = React.memo(function Spine({ height }: { height: number }) {
 
 // Everything positioned from the layout glides with the cards (same timing as
 // TaskCard's settle) when the day re-lays out — lifting, dropping, toggling.
-const GLIDE = LinearTransition.duration(240).easing(Easing.out(Easing.cubic));
-const APPEAR = FadeIn.duration(220);
-const VANISH = FadeOut.duration(140);
+// (Built per render so they follow the animation-speed setting.)
+const glide = () => LinearTransition.duration(ms(240)).easing(Easing.out(Easing.cubic));
+const appear = () => FadeIn.duration(ms(220));
+const vanish = () => FadeOut.duration(ms(140));
 const APressable = Animated.createAnimatedComponent(Pressable);
 
 function HourTicks({ dayStart, dayEnd, yAt }: { dayStart: number; dayEnd: number; yAt: (m: number) => number }) {
@@ -67,7 +69,7 @@ function HourTicks({ dayStart, dayEnd, yAt }: { dayStart: number; dayEnd: number
   const rows = [];
   for (let h = first; h <= last; h++) {
     rows.push(
-      <Animated.View key={h} layout={GLIDE} style={[styles.tickRow, { top: yAt(h * 60) }]}>
+      <Animated.View key={h} layout={glide()} style={[styles.tickRow, { top: yAt(h * 60) }]}>
         <Text style={styles.tickLabel}>{String(h).padStart(2, '0')}</Text>
         <View style={styles.tickLine} />
       </Animated.View>
@@ -82,7 +84,7 @@ function HourTicks({ dayStart, dayEnd, yAt }: { dayStart: number; dayEnd: number
 // overlaps each card by 2px so the seam between them disappears.
 function OverlapBridge({ band, grey }: { band: OverlapBand; grey: boolean }) {
   return (
-    <Animated.View layout={GLIDE} entering={APPEAR} exiting={VANISH} pointerEvents="none" style={[styles.bridge, { top: band.top - 2, height: band.height + 4 }]}>
+    <Animated.View layout={glide()} entering={appear()} exiting={vanish()} pointerEvents="none" style={[styles.bridge, { top: band.top - 2, height: band.height + 4 }]}>
       <LinearGradient colors={[hexA(band.colorA, 0.09), hexA(band.colorB, 0.09)]} style={StyleSheet.absoluteFill} />
       <LinearGradient colors={[hexA(band.colorA, 0.16), hexA(band.colorB, 0.16)]} style={[styles.rail, { left: 0 }]} />
       <LinearGradient colors={[hexA(band.colorA, 0.16), hexA(band.colorB, 0.16)]} style={[styles.rail, { right: 0 }]} />
@@ -112,9 +114,13 @@ export function Timeline(props: Props) {
   const contentH = Math.max(H + 100, viewportH);
   const endHeight = contentH - botTop;
 
-  // The lifted card stays in the same keyed list (appended last) so it is the
-  // same component instance throughout the drag — no remount, no jump.
-  const cards = dragged ? [...sorted, dragged.task] : sorted;
+  // While dragging, the layout is the landing preview (it already contains the
+  // held card's slot). The held card itself stays in the same keyed list,
+  // appended last, so it is the same component instance throughout — no
+  // remount, no jump — and floats above everything.
+  const cards = dragged ? [...sorted.filter((t) => t.id !== dragged.task.id), dragged.task] : sorted;
+  const slot = dragged?.slot;
+  const r = (joined?: boolean) => (joined ? 0 : 16);
 
   return (
     <View style={{ height: contentH }}>
@@ -139,9 +145,9 @@ export function Timeline(props: Props) {
       {freeblocks.map((g) => (
         <APressable
           key={g.key}
-          layout={GLIDE}
-          entering={APPEAR}
-          exiting={VANISH}
+          layout={glide()}
+          entering={appear()}
+          exiting={vanish()}
           onPress={() => props.onAddAt(g.start)}
           style={[styles.free, { top: g.top, height: g.height }]}>
           <Hatch color="#ffffff" opacity={0.05} radius={14} style={StyleSheet.absoluteFill} />
@@ -152,22 +158,37 @@ export function Timeline(props: Props) {
 
       {/* Gap pills */}
       {chips.map((c) => (
-        <Animated.View key={c.key} layout={GLIDE} entering={APPEAR} exiting={VANISH} style={[styles.chipRow, { top: c.top }]}>
+        <Animated.View key={c.key} layout={glide()} entering={appear()} exiting={vanish()} style={[styles.chipRow, { top: c.top }]}>
           <View style={styles.chip}>
             <Text style={styles.chipTxt}>{c.label}</Text>
           </View>
         </Animated.View>
       ))}
 
-      {/* Landing preview while dragging: steps between slots, fades in/out */}
-      {dragged && (
+      {/* Landing slot while dragging: the room the day has made for the held
+          card (fused edges when it will overlap), gliding as the time changes. */}
+      {dragged && slot && (
         <Animated.View
           pointerEvents="none"
-          layout={LinearTransition.duration(130).easing(Easing.out(Easing.quad))}
-          entering={FadeIn.duration(160)}
-          exiting={FadeOut.duration(160)}
-          style={[styles.ghost, { top: dragged.ghostTop, height: dragged.h, borderColor: hexA(dragged.task.color, 0.7), backgroundColor: hexA(dragged.task.color, 0.08) }]}>
-          <Text style={[styles.ghostTxt, { color: hexA(dragged.task.color, 0.95) }]}>{fmt(dragged.liveStart, clock)}</Text>
+          layout={LinearTransition.duration(ms(160)).easing(Easing.out(Easing.cubic))}
+          entering={FadeIn.duration(ms(160))}
+          exiting={FadeOut.duration(ms(140))}
+          style={[
+            styles.ghost,
+            {
+              top: slot.top,
+              height: slot.h,
+              borderColor: hexA(dragged.task.color, 0.7),
+              backgroundColor: hexA(dragged.task.color, 0.08),
+              borderTopLeftRadius: r(slot.joinTop),
+              borderTopRightRadius: r(slot.joinTop),
+              borderBottomLeftRadius: r(slot.joinBottom),
+              borderBottomRightRadius: r(slot.joinBottom),
+            },
+          ]}>
+          <Text style={[styles.ghostTxt, { color: hexA(dragged.task.color, 0.95) }]}>
+            {fmt(dragged.liveStart, clock)} – {fmt(dragged.liveStart + dragged.task.dur, clock)}
+          </Text>
         </Animated.View>
       )}
 
@@ -206,7 +227,7 @@ export function Timeline(props: Props) {
       ))}
 
       {/* End-of-day band */}
-      <Animated.View layout={GLIDE} style={[styles.endBand, { top: botTop, height: endHeight }]}>
+      <Animated.View layout={glide()} style={[styles.endBand, { top: botTop, height: endHeight }]}>
         <Hatch color="#ff5a64" opacity={0.16} radius={13} style={styles.endHatch}>
           <Text style={styles.endTxt}>END OF DAY · {fmt(dayEnd, clock)}</Text>
         </Hatch>
@@ -214,7 +235,7 @@ export function Timeline(props: Props) {
 
       {/* Now line */}
       {showNow && (
-        <Animated.View layout={GLIDE} style={[styles.nowLine, { top: yAt(nowMin!) }]}>
+        <Animated.View layout={glide()} style={[styles.nowLine, { top: yAt(nowMin!) }]}>
           <Text style={styles.nowLabel}>{fmt(nowMin!, clock)}</Text>
           <View style={styles.nowDot} />
         </Animated.View>

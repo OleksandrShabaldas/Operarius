@@ -28,7 +28,7 @@ export function TodoScreen({
   const done = todos.filter((t) => t.done);
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} collapsable={false}>
       <View style={[styles.head, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.title}>To-do</Text>
         <View style={styles.headBtns}>

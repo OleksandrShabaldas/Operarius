@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
+  LinearTransition,
   runOnJS,
   runOnUI,
   SharedValue,
@@ -11,12 +12,13 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { ms, sp } from '../motion';
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Place, Tag, Task } from '../types';
 import { C } from '../theme';
-import { fmt, fmtDur, findTag, hexA, placeLabel } from '../utils';
+import { fmt, fmtDur, findTag, hexA, placeLabel, tagLabel } from '../utils';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
 import { Stripes } from './Stripes';
@@ -75,7 +77,7 @@ function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number
           <View style={styles.metaRow}>
             {!!tag && (
               <View style={[styles.chip, { backgroundColor: hexA(tagColor, 0.15), borderColor: hexA(tagColor, 0.28) }]}>
-                <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
+                <Text style={[styles.chipTxt, { color: tagColor }]}>{tagLabel(tag)}</Text>
               </View>
             )}
             {!!placeTxt && (
@@ -93,18 +95,29 @@ function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number
 
 // Inline subtask strip at the bottom of a card: a "n/m subtasks" toggle that
 // expands to show tappable subtask rows. Expanded state is persisted per task.
-function SubtaskStrip({ task, onToggleExpanded, onToggleSubtask }: { task: Task; onToggleExpanded: () => void; onToggleSubtask: (subId: string) => void }) {
+function SubtaskStrip({
+  task,
+  collapsed,
+  onToggleExpanded,
+  onToggleSubtask,
+}: {
+  task: Task;
+  collapsed?: boolean; // held in a drag: keep the card compact
+  onToggleExpanded: () => void;
+  onToggleSubtask: (subId: string) => void;
+}) {
   const done = task.subtasks.filter((s) => s.done).length;
   const total = task.subtasks.length;
+  const open = task.expanded && !collapsed;
   return (
     <View style={styles.subStrip}>
       <Tappable onPress={onToggleExpanded} hitSlop={6} style={styles.subToggle}>
-        <Feather name={task.expanded ? 'chevron-up' : 'chevron-down'} size={13} color={C.muted} />
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={13} color={C.muted} />
         <Text style={styles.subToggleTxt}>
           {done}/{total} subtasks
         </Text>
       </Tappable>
-      {task.expanded &&
+      {open &&
         task.subtasks.map((sub) => (
           <Tappable key={sub.id} onPress={() => onToggleSubtask(sub.id)} hitSlop={4} style={styles.subItem}>
             <View style={[styles.subDot, sub.done && { backgroundColor: task.color, borderColor: task.color }]}>
@@ -119,12 +132,13 @@ function SubtaskStrip({ task, onToggleExpanded, onToggleSubtask }: { task: Task;
   );
 }
 
-// "Missed" chip in the top-right corner, with a tight halo of faded red
-// warning stripes centred on it (masked, so it dissolves into the card).
+// "Missed" chip in the top-right corner, with a subtle halo of red warning
+// stripes centred on it: faint, and fading out gradually over a wider area so
+// it never reads as a box around the chip.
 function MissedBadge() {
   return (
     <View pointerEvents="none" style={styles.missedWrap}>
-      <Stripes color={C.now} opacity={0.75} spacing={4} strokeWidth={0.9} fade="radial" style={StyleSheet.absoluteFill} />
+      <Stripes color={C.now} opacity={0.5} spacing={4} strokeWidth={0.85} fade="radial-soft" style={StyleSheet.absoluteFill} />
       <View style={styles.missedBadge}>
         <Text style={styles.missedTxt}>Missed</Text>
       </View>
@@ -151,29 +165,30 @@ function TaskCardBase(props: Props) {
   useEffect(() => {
     if (isDragging) return;
     const target = pos.top;
+    const duration = ms(240);
     runOnUI(() => {
       'worklet';
       if (dragging.value) {
         topSV.value = baseS.value + dyS.value + (scrollY.value - scroll0.value);
         dragging.value = 0;
       }
-      topSV.value = withTiming(target, { duration: 240, easing: Easing.out(Easing.cubic) });
+      topSV.value = withTiming(target, { duration, easing: Easing.out(Easing.cubic) });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos.top, isDragging, endTick]);
 
-  // Once lifted, glide the drag anchor to where this task's time sits in the
-  // (now hole-free) timeline, so the finger→time mapping is exact.
+  // Once lifted, glide the drag anchor to where this task's time sits on the
+  // drag ruler, so the finger→time mapping is exact from the first move.
   useEffect(() => {
     if (isDragging && props.dragBaseY != null) {
-      baseS.value = withTiming(props.dragBaseY, { duration: 170, easing: Easing.out(Easing.cubic) });
+      baseS.value = withTiming(props.dragBaseY, { duration: ms(170), easing: Easing.out(Easing.cubic) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, props.dragBaseY]);
 
   const beginDrag = () => {
     draggingRef.current = true;
-    scale.value = withSpring(1.03, { damping: 18, stiffness: 260 });
+    scale.value = withSpring(1.03, sp({ damping: 18, stiffness: 260 }));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     props.onDragStart(task.id);
   };
@@ -181,7 +196,7 @@ function TaskCardBase(props: Props) {
     if (draggingRef.current) props.onDragMove(task.id, dy, absY);
   };
   const endDrag = () => {
-    scale.value = withSpring(1, { damping: 18, stiffness: 260 });
+    scale.value = withSpring(1, sp({ damping: 18, stiffness: 260 }));
     if (draggingRef.current) {
       draggingRef.current = false;
       Haptics.selectionAsync().catch(() => {});
@@ -256,7 +271,11 @@ function TaskCardBase(props: Props) {
 
   return (
     <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]} entering={stagger(props.index)}>
-      <Animated.View style={[styles.card, radii, cardAnim, { minHeight: pos.h, boxShadow: cardShadow }]}>
+      <Animated.View
+        // Height changes (subtasks folding open/closed) glide. Native only: the web
+        // implementation measures on-screen rects, which scrolling shifts.
+        layout={Platform.OS === 'web' ? undefined : LinearTransition.duration(ms(220)).easing(Easing.out(Easing.cubic))}
+        style={[styles.card, radii, cardAnim, { minHeight: pos.h, boxShadow: cardShadow }]}>
         <View style={styles.cardMain}>
           <GestureDetector gesture={gesture}>
             <Animated.View style={styles.grab}>
@@ -280,7 +299,12 @@ function TaskCardBase(props: Props) {
         </View>
 
         {task.subtasks.length > 0 && (
-          <SubtaskStrip task={task} onToggleExpanded={() => props.onToggleExpanded(task.id)} onToggleSubtask={(sid) => props.onToggleSubtask(task.id, sid)} />
+          <SubtaskStrip
+            task={task}
+            collapsed={isDragging}
+            onToggleExpanded={() => props.onToggleExpanded(task.id)}
+            onToggleSubtask={(sid) => props.onToggleSubtask(task.id, sid)}
+          />
         )}
 
         {/* Grayscale + dim via blend overlays (no content copy). */}
@@ -303,7 +327,18 @@ function TaskCardBase(props: Props) {
   );
 }
 
-export const TaskCard = React.memo(TaskCardBase);
+// Layout objects are rebuilt on every drag step; compare the slot by value so
+// only cards that actually move or change re-render.
+const samePos = (a: Pos, b: Pos) => a.top === b.top && a.h === b.h && !!a.joinTop === !!b.joinTop && !!a.joinBottom === !!b.joinBottom;
+export const TaskCard = React.memo(TaskCardBase, (prev, next) => {
+  for (const k of Object.keys(next) as (keyof Props)[]) {
+    if (k === 'index') continue; // only used for the mount stagger
+    if (k === 'pos') {
+      if (!samePos(prev.pos, next.pos)) return false;
+    } else if (prev[k] !== next[k]) return false;
+  }
+  return true;
+});
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 56, right: 16 },
@@ -328,7 +363,8 @@ const styles = StyleSheet.create({
   dim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(11,11,13,0.32)' },
   // "Missed": the wrap is sized just a little larger than the chip and centred
   // on it, so the striped halo hugs the chip.
-  missedWrap: { position: 'absolute', top: -3, right: -6, width: 76, height: 38, alignItems: 'center', justifyContent: 'center' },
+  // Centred on the chip (same spot as before), just larger so the fade has room.
+  missedWrap: { position: 'absolute', top: -11, right: -20, width: 104, height: 54, alignItems: 'center', justifyContent: 'center' },
   missedBadge: { backgroundColor: 'rgba(40,16,19,0.92)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, boxShadow: 'inset 0 0 0 1px rgba(255,90,95,0.45)' },
   missedTxt: { fontSize: 9.5, fontWeight: '800', color: '#ff5a5f', letterSpacing: 0.4 },
   noteBadge: { position: 'absolute', top: 6, left: 6, width: 18, height: 18, borderRadius: 6, backgroundColor: 'rgba(20,21,24,0.82)', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.1)' },

@@ -53,6 +53,7 @@ function Root() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [autoDate, setAutoDate] = useState(false); // open the editor straight into the date picker (copy flow)
   const [viewId, setViewId] = useState<string | null>(null);
+  const [todayPing, setTodayPing] = useState(0); // re-tapping the Today tab → jump to today
 
   const [update, setUpdate] = useState<ReleaseInfo | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -172,12 +173,12 @@ function Root() {
   if (!loaded) return <View style={styles.bg} />;
 
   // Other planned tasks on the draft's day, so the duration picker can offer
-  // "start after previous" / "end before next".
+  // "after previous task" / "until next task" (named, with their times).
   const editorSiblings =
     draft && draft.type === 'planned' && draft.date
       ? tasksForDay(draft.date)
           .filter((t) => t.type === 'planned' && parseId(t.id).baseId !== draft.id)
-          .map((t) => ({ start: t.start, dur: t.dur }))
+          .map((t) => ({ start: t.start, dur: t.dur, title: t.title, color: t.color }))
       : [];
 
   // Resolve the info-sheet target — a repeating occurrence is reconstructed
@@ -202,11 +203,19 @@ function Root() {
           onOpenSettings={() => setOverlay('settings')}
           onNewTask={openNew}
           onOpenInfo={setViewId}
+          todayPing={todayPing}
         />
       ) : (
         <TodoScreen onOpenInfo={setViewId} onOpenStats={() => setOverlay('stats')} onOpenSettings={() => setOverlay('settings')} />
       )}
-      <BottomNav tab={tab} onTab={setTab} onAdd={() => openNew()} />
+      <BottomNav
+        tab={tab}
+        onTab={(t) => {
+          if (t === 'today' && tab === 'today') setTodayPing((n) => n + 1);
+          setTab(t);
+        }}
+        onAdd={() => openNew()}
+      />
 
       {/* Pushed screens — slide in/out over the tabs */}
       {overlay === 'stats' && (
@@ -250,6 +259,8 @@ function Root() {
         colors={settings.colors}
         emojis={settings.emojis}
         siblings={editorSiblings}
+        dayStart={settings.dayStart}
+        dayEnd={settings.dayEnd}
         autoPickDate={autoDate}
         onPatch={patch}
         onSave={save}

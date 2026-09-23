@@ -38,7 +38,9 @@ export type WeekStart = 'mon' | 'sun';
 export type Clock = '12h' | '24h';
 
 // User-defined tag. Top-level when parentId is null, otherwise a sub-tag.
-export type Tag = { id: string; name: string; parentId: string | null; color: string };
+// `hideDots` keeps the tag's tasks (and, for a top-level tag, its sub-tags'
+// tasks) out of the week strip's per-task dots.
+export type Tag = { id: string; name: string; parentId: string | null; color: string; hideDots?: boolean };
 
 // User-defined place. May belong to a (top-level) tag, carry an open-able link,
 // and hold a photo.

@@ -24,6 +24,7 @@ type Ctx = {
   addTag: (name: string, parentId?: string | null) => void;
   renameTag: (id: string, name: string) => void;
   setTagColor: (id: string, color: string) => void;
+  setTagHideDots: (id: string, hide: boolean) => void; // keep the tag's tasks out of the week-strip dots
   deleteTag: (id: string) => void;
   addPlace: (name: string, tagId?: string | null) => void;
   renamePlace: (id: string, name: string) => void;
@@ -156,9 +157,10 @@ export function AppProvider({
     const n = name.trim();
     if (!n) return;
     setSettings((prev) => {
+      const palette = prev.colors.length ? prev.colors : COLORS;
       const color = parentId
         ? prev.tags.find((t) => t.id === parentId)?.color || '#5B9DF9'
-        : COLORS[prev.tags.filter((t) => !t.parentId).length % COLORS.length];
+        : palette[prev.tags.filter((t) => !t.parentId).length % palette.length];
       return { ...prev, tags: [...prev.tags, { id: genId(), name: n, parentId, color }] };
     });
   }, []);
@@ -171,6 +173,10 @@ export function AppProvider({
 
   const setTagColor = useCallback((id: string, color: string) => {
     setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, color } : t)) }));
+  }, []);
+
+  const setTagHideDots = useCallback((id: string, hide: boolean) => {
+    setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, hideDots: hide } : t)) }));
   }, []);
 
   const deleteTag = useCallback((id: string) => {
@@ -228,6 +234,7 @@ export function AppProvider({
     addTag,
     renameTag,
     setTagColor,
+    setTagHideDots,
     deleteTag,
     addPlace,
     renamePlace,

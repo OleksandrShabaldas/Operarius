@@ -8,8 +8,11 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { ms, sp } from '../motion';
-import { Clock, Draft, Place, Preset, Tag, Task, TaskType } from '../types';
+import { Clock, Draft, Place, Preset, Reminders, Tag, Task, TaskType } from '../types';
 import { dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, tagLabel, todayKey } from '../utils';
+import { carryReminders, reminderSummary } from '../reminders';
+import { ReminderPopup } from './ReminderPopup';
+import { INTENSITY } from './ReminderBits';
 import { CustomColorGrid, CustomIconInput, IconGrid, PaletteRow } from './ColorIcon';
 import { Anchor, DAY_END_ID, DAY_START_ID, DatePickerPopup, DurationPickerPopup, Neighbor, SelectPopup, TimePickerPopup } from './pickers';
 import { RepeatPopup } from './RepeatPopup';
@@ -41,7 +44,7 @@ type Props = {
   onClose: () => void;
 };
 
-type Picker = 'icon' | 'start' | 'end' | 'dur' | 'date' | 'tag' | 'place' | 'repeat' | null;
+type Picker = 'icon' | 'start' | 'end' | 'dur' | 'date' | 'tag' | 'place' | 'repeat' | 'remind' | null;
 
 const TYPES: { id: TaskType; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { id: 'planned', label: 'Planned', icon: 'clock' },
@@ -223,6 +226,7 @@ export function TaskEditorSheet({
     if (!t.has('notes')) p.notes = src.notes;
     if (!t.has('subtasks')) p.subtasks = src.subtasks.map((s) => ({ id: genId(), title: s.title, done: false }));
     if (!t.has('repeat')) p.repeat = src.repeat ? { ...src.repeat, weekdays: [...src.repeat.weekdays] } : null;
+    if (!t.has('reminders')) p.reminders = carryReminders(src.reminders);
     onPatch(p);
     setUsedName(p.title!);
     Haptics.selectionAsync().catch(() => {});
@@ -353,6 +357,10 @@ export function TaskEditorSheet({
                   <FieldRow icon="repeat" label="Repeat" value={repeatSummary(d.repeat)} onPress={() => setPicker('repeat')} />
                 </>
               )}
+
+              {/* Reminders */}
+              <SectionHeader icon="bell" label="REMINDERS" />
+              <ReminderField r={d.reminders} type={d.type} clock={clock} onPress={() => setPicker('remind')} />
 
               {/* Organize */}
               <SectionHeader icon="tag" label="ORGANIZE" />
@@ -548,7 +556,35 @@ export function TaskEditorSheet({
       <SelectPopup visible={picker === 'tag'} title="Select tag" options={tagOptions} selectedId={d?.tagId ?? null} emptyText="No tags yet — add some in Settings." onSelect={(id) => patch({ tagId: id })} onClose={() => setPicker(null)} />
       <PlaceSelectPopup visible={picker === 'place'} places={places} tags={tags} selectedId={d?.placeId ?? null} taskTagId={d?.tagId ?? null} onSelect={(id) => patch({ placeId: id })} onClose={() => setPicker(null)} />
       <RepeatPopup visible={picker === 'repeat'} repeat={d?.repeat ?? null} baseDate={d?.date || todayKey()} weekStart={weekStart} onChange={(r) => patch({ repeat: r })} onClose={() => setPicker(null)} />
+      <ReminderPopup visible={picker === 'remind'} draft={draft} onChange={(r) => patch({ reminders: r })} onClose={() => setPicker(null)} />
     </>
+  );
+}
+
+// The "Remind me" row: what's set (and how insistent), or Off.
+function ReminderField({ r, type, clock, onPress }: { r: Reminders | null; type: TaskType; clock: Clock; onPress: () => void }) {
+  const parts = reminderSummary(r, type, clock);
+  const on = parts.length > 0 && !!r;
+  const m = r ? INTENSITY[r.intensity] : null;
+  const text = on ? parts.slice(0, 2).join(', ') + (parts.length > 2 ? `  +${parts.length - 2}` : '') : 'Off';
+  return (
+    <Tappable style={styles.row} onPress={onPress}>
+      <View style={[styles.rowIcon, on && m ? { backgroundColor: hexA(m.color, 0.15) } : null]}>
+        <Feather name={on ? 'bell' : 'bell-off'} size={15} color={on && m ? m.color : C.textDim} />
+      </View>
+      <Text style={styles.rowLabel}>Remind me</Text>
+      <View style={styles.remVal}>
+        <Text style={[styles.rowValue, styles.remValTxt, { color: on ? C.text : C.faint }]} numberOfLines={1}>
+          {text}
+        </Text>
+        {on && m && (
+          <Appear key={r!.intensity} from="up" distance={5}>
+            <Text style={[styles.remSub, { color: m.color }]}>{m.label}</Text>
+          </Appear>
+        )}
+      </View>
+      <Feather name="chevron-right" size={18} color={C.faint} />
+    </Tappable>
   );
 }
 
@@ -733,6 +769,9 @@ const styles = StyleSheet.create({
   rowIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: C.textDim },
   rowValue: { fontSize: 15, fontWeight: '700', maxWidth: '52%', fontVariant: ['tabular-nums'] },
+  remVal: { alignItems: 'flex-end', maxWidth: '56%' },
+  remValTxt: { maxWidth: '100%' },
+  remSub: { fontSize: 11, fontWeight: '800', marginTop: 2, letterSpacing: 0.3 },
 
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 8 },
   subCheck: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },

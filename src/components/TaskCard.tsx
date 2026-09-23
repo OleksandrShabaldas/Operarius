@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Place, Tag, Task } from '../types';
 import { C } from '../theme';
 import { fmt, fmtDur, findTag, hexA, placeLabel, tagLabel } from '../utils';
+import { INTENSITY_COLOR, remindsAtAll } from '../reminders';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
 import { Stripes } from './Stripes';
@@ -51,7 +52,7 @@ type Props = {
 };
 
 // Visual content of a card (icon + text + meta).
-function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number; end: number; clock: Clock; tags: Tag[]; places: Place[] }) {
+function CardFace({ task, s, end, clock, tags, places, past }: { task: Task; s: number; end: number; clock: Clock; tags: Tag[]; places: Place[]; past: boolean }) {
   const color = task.color;
   const tag = findTag(tags, task.tagId);
   const tagColor = tag?.color || color;
@@ -72,6 +73,9 @@ function CardFace({ task, s, end, clock, tags, places }: { task: Task; s: number
             {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
           </Text>
           {!!task.repeat && <Feather name="repeat" size={10.5} color={C.muted} style={styles.repeatIcon} />}
+          {remindsAtAll(task) && !task.done && (
+            <Feather name="bell" size={10.5} color={past ? C.faint : INTENSITY_COLOR[task.reminders!.intensity]} style={styles.repeatIcon} />
+          )}
         </View>
         {(!!tag || !!placeTxt) && (
           <View style={styles.metaRow}>
@@ -279,7 +283,7 @@ function TaskCardBase(props: Props) {
         <View style={styles.cardMain}>
           <GestureDetector gesture={gesture}>
             <Animated.View style={styles.grab}>
-              <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} />
+              <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} past={props.dayState === 'past'} />
             </Animated.View>
           </GestureDetector>
 

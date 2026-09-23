@@ -1,0 +1,20 @@
+<resources>
+  <!-- The reminder screen: edge-to-edge, dark like the app, no title bar. -->
+  <style name="OperariusAlarmTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <item name="android:windowBackground">@color/operarius_alarm_bg</item>
+    <item name="android:colorBackground">@color/operarius_alarm_bg</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+    <item name="android:windowLightStatusBar">false</item>
+    <item name="android:windowAnimationStyle">@style/OperariusAlarmWindowAnim</item>
+  </style>
+
+  <style name="OperariusAlarmWindowAnim">
+    <item name="android:activityOpenEnterAnimation">@anim/operarius_fade_in</item>
+    <item name="android:activityOpenExitAnimation">@anim/operarius_hold</item>
+    <item name="android:activityCloseEnterAnimation">@anim/operarius_hold</item>
+    <item name="android:activityCloseExitAnimation">@anim/operarius_fade_out</item>
+  </style>
+
+  <color name="operarius_alarm_bg">#0B0B0D</color>
+</resources>

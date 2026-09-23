@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Place, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
+import { CustomReminder, Place, ReminderIntensity, Reminders, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
 import {
   DEFAULT_DAY_START,
   DEFAULT_DAY_END,
@@ -59,7 +59,34 @@ export const DEFAULT_SETTINGS: Settings = {
   swapOnDrag: false,
   animations: true,
   animScale: 1,
+  remindersOn: true,
+  reminderDefault: { before: null, intensity: 'easy' },
+  snoozeMin: 10,
+  ringMin: 0,
+  alarmSound: null,
+  alarmVibrate: true,
+  alarmGentle: true,
 };
+
+const INTENSITIES: ReminderIntensity[] = ['easy', 'medium', 'intense'];
+const isIntensity = (v: any): v is ReminderIntensity => INTENSITIES.includes(v);
+const offsetOrNull = (v: any): number | null => (typeof v === 'number' && isFinite(v) && v >= 0 ? Math.round(v) : null);
+
+function migrateReminders(raw: any): Reminders | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const custom: CustomReminder[] = Array.isArray(raw.custom)
+    ? raw.custom
+        .filter((c: any) => c && typeof c.date === 'string' && typeof c.min === 'number')
+        .map((c: any) => ({ id: String(c.id ?? `${c.date}-${c.min}`), date: c.date, min: Math.max(0, Math.min(24 * 60 - 1, Math.round(c.min))) }))
+    : [];
+  const r: Reminders = {
+    before: offsetOrNull(raw.before),
+    after: offsetOrNull(raw.after),
+    custom,
+    intensity: isIntensity(raw.intensity) ? raw.intensity : 'easy',
+  };
+  return r.before == null && r.after == null && r.custom.length === 0 ? null : r;
+}
 
 // The palette / icon set always hold exactly `n` distinct entries (so pickers
 // show full rows): extras are trimmed and gaps topped up with unused defaults.
@@ -124,6 +151,7 @@ function migrateTask(raw: any): Task {
     repeat: migrateRepeat(raw.repeat),
     doneDates: Array.isArray(raw.doneDates) ? raw.doneDates.filter((d: any) => typeof d === 'string') : [],
     expanded: !!raw.expanded,
+    reminders: migrateReminders(raw.reminders),
   };
 }
 
@@ -188,6 +216,19 @@ export const localRepository: Repository = {
         swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
         animations: typeof parsed.animations === 'boolean' ? parsed.animations : true,
         animScale: typeof parsed.animScale === 'number' && parsed.animScale >= 0.5 && parsed.animScale <= 4 ? parsed.animScale : 1,
+        remindersOn: typeof parsed.remindersOn === 'boolean' ? parsed.remindersOn : true,
+        reminderDefault: {
+          before: offsetOrNull(parsed.reminderDefault?.before),
+          intensity: isIntensity(parsed.reminderDefault?.intensity) ? parsed.reminderDefault!.intensity : 'easy',
+        },
+        snoozeMin: typeof parsed.snoozeMin === 'number' && parsed.snoozeMin >= 1 && parsed.snoozeMin <= 60 ? Math.round(parsed.snoozeMin) : 10,
+        ringMin: typeof parsed.ringMin === 'number' && parsed.ringMin >= 0 && parsed.ringMin <= 60 ? Math.round(parsed.ringMin) : 0,
+        alarmSound:
+          parsed.alarmSound && typeof parsed.alarmSound.uri === 'string' && parsed.alarmSound.uri
+            ? { uri: parsed.alarmSound.uri, name: typeof parsed.alarmSound.name === 'string' ? parsed.alarmSound.name : 'Alarm' }
+            : null,
+        alarmVibrate: typeof parsed.alarmVibrate === 'boolean' ? parsed.alarmVibrate : true,
+        alarmGentle: typeof parsed.alarmGentle === 'boolean' ? parsed.alarmGentle : true,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -219,7 +260,7 @@ export const localRepository: Repository = {
 // The sample day from the prototype, seeded onto the first launch so a new
 // install opens looking exactly like the design.
 export function seedTasks(todayKey: string): Task[] {
-  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks' | 'repeat' | 'doneDates' | 'expanded'>[] = [
+  const base: Omit<Task, 'id' | 'date' | 'type' | 'notes' | 'subtasks' | 'repeat' | 'doneDates' | 'expanded' | 'reminders'>[] = [
     { title: 'Morning run', emoji: '🏃', color: '#5FD08A', start: 7 * 60, dur: 30, done: true, tagId: 'health', placeId: null },
     { title: 'Shower', emoji: '🚿', color: '#5B9DF9', start: 8 * 60, dur: 15, done: false, tagId: null, placeId: null },
     { title: 'Breakfast', emoji: '🍳', color: '#F2C14E', start: 8 * 60 + 15, dur: 30, done: false, tagId: null, placeId: null },
@@ -240,5 +281,6 @@ export function seedTasks(todayKey: string): Task[] {
     repeat: null,
     doneDates: [],
     expanded: false,
+    reminders: null,
   }));
 }

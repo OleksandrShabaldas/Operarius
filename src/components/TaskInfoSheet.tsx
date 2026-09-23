@@ -5,7 +5,10 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Clock, Place, Tag, Task } from '../types';
-import { fmt, fmtDur, hexA, dateLabel, findTag, placeLabel, repeatSummary, tagLabel } from '../utils';
+import { fmt, fmtDur, hexA, dateKey, dateLabel, findTag, placeLabel, repeatSummary, tagLabel } from '../utils';
+import { useApp } from '../store';
+import { reminderLines, whenLabel } from '../reminders';
+import { INTENSITY } from './ReminderBits';
 import { PlaceIcon } from './PlaceIcon';
 import { BottomSheet, CenterPopup } from './Overlay';
 import { Appear, Tappable } from './anim';
@@ -45,6 +48,18 @@ export function TaskInfoSheet({
   const doneCount = t ? t.subtasks.filter((s) => s.done).length : 0;
 
   const placeTag = place?.tagId ? findTag(tags, place.tagId) : null;
+
+  // Reminders for this occurrence, with when each fires.
+  const { settings } = useApp();
+  const remLines = t ? reminderLines(t, t.date, settings) : [];
+  const rem = t?.reminders ? INTENSITY[t.reminders.intensity] : null;
+  const remTime = (at: number | null, kind: string) => {
+    if (at == null) return '';
+    const d = new Date(at);
+    const hm = fmt(d.getHours() * 60 + d.getMinutes(), clock);
+    // Before / after on another day than the task (e.g. the evening before) says which.
+    return kind !== 'custom' && t && dateKey(d) !== t.date ? whenLabel(at, clock) : hm;
+  };
 
   return (
     <BottomSheet open={visible} onClose={onClose}>
@@ -88,6 +103,42 @@ export function TaskInfoSheet({
                 </Tappable>
               )}
             </View>
+          )}
+
+          {remLines.length > 0 && rem && (
+            <>
+              <View style={styles.remHead}>
+                <Text style={[styles.section, styles.remHeadTxt]}>REMINDERS</Text>
+                {settings.remindersOn ? (
+                  <View style={[styles.remChip, { backgroundColor: hexA(rem.color, 0.14) }]}>
+                    <Feather name={rem.icon} size={10} color={rem.color} />
+                    <Text style={[styles.remChipTxt, { color: rem.color }]}>{rem.label}</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.remChip, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+                    <Feather name="pause" size={10} color={C.muted} />
+                    <Text style={[styles.remChipTxt, { color: C.muted }]}>Paused in Settings</Text>
+                  </View>
+                )}
+              </View>
+              {remLines.map((l, i) => {
+                // Passed, or the task is already done: it won't ring.
+                const off = l.past || t.done;
+                return (
+                  <Appear key={l.key} from="up" delay={40 + i * 35} distance={6}>
+                    <View style={styles.remRow}>
+                      <View style={[styles.remIcon, { backgroundColor: hexA(off ? C.faint : rem.color, 0.13) }]}>
+                        <Feather name={l.kind === 'custom' ? 'calendar' : l.kind === 'before' ? 'skip-back' : 'skip-forward'} size={12} color={off ? C.faint : rem.color} />
+                      </View>
+                      <Text style={[styles.remLabel, off && styles.remPast]} numberOfLines={1}>
+                        {l.label}
+                      </Text>
+                      <Text style={[styles.remTime, off && styles.remPast]}>{remTime(l.at, l.kind)}</Text>
+                    </View>
+                  </Appear>
+                );
+              })}
+            </>
           )}
 
           {t.subtasks.length > 0 && (
@@ -228,6 +279,15 @@ const styles = StyleSheet.create({
   closeBtn: { height: 46, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
   closeTxt: { fontSize: 15, fontWeight: '700', color: C.text },
   section: { fontSize: 11, color: C.muted, fontWeight: '700', marginTop: 16, marginBottom: 10, letterSpacing: 0.3 },
+  remHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 10 },
+  remHeadTxt: { marginTop: 0, marginBottom: 0 },
+  remChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 },
+  remChipTxt: { fontSize: 11, fontWeight: '800' },
+  remRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 9 },
+  remIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  remLabel: { flex: 1, fontSize: 14.5, color: C.text, fontWeight: '500' },
+  remTime: { fontSize: 14, color: C.textDim, fontWeight: '700', fontVariant: ['tabular-nums'], paddingRight: 1 },
+  remPast: { color: C.faint, textDecorationLine: 'line-through' },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 9 },
   subCheck: { width: 22, height: 22, borderRadius: 7, boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   subTxt: { fontSize: 15, color: C.text, flex: 1 },

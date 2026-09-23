@@ -13,6 +13,7 @@ type Ctx = {
   saveDraft: (draft: Draft) => void; // add when no id, else update
   deleteTask: (id: string) => void;
   toggleDone: (id: string) => void;
+  setDone: (id: string, done: boolean) => void; // e.g. "Done" pressed on a reminder
   toggleSubtask: (taskId: string, subId: string) => void;
   toggleExpanded: (id: string) => void; // show/hide subtasks inline on the card
   moveTask: (id: string, start: number) => void; // commit a drag
@@ -116,6 +117,21 @@ export function AppProvider({
           return { ...t, doneDates: has ? t.doneDates.filter((d) => d !== date) : [...t.doneDates, date] };
         }
         return { ...t, done: !t.done };
+      })
+    );
+  }, []);
+
+  const setDone = useCallback((id: string, done: boolean) => {
+    const { baseId, date } = parseId(id);
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== baseId) return t;
+        if (t.repeat && date) {
+          const has = t.doneDates.includes(date);
+          if (has === done) return t;
+          return { ...t, doneDates: done ? [...t.doneDates, date] : t.doneDates.filter((d) => d !== date) };
+        }
+        return t.done === done ? t : { ...t, done };
       })
     );
   }, []);
@@ -236,6 +252,7 @@ export function AppProvider({
     saveDraft,
     deleteTask,
     toggleDone,
+    setDone,
     toggleSubtask,
     toggleExpanded,
     moveTask,

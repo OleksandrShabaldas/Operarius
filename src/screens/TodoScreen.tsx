@@ -8,7 +8,8 @@ import { C } from '../theme';
 import { Task } from '../types';
 import { useApp } from '../store';
 import { findTag, hexA } from '../utils';
-import { Tag } from '../types';
+import { Clock, Tag } from '../types';
+import { customLabel, INTENSITY_COLOR, nextCustom } from '../reminders';
 import { stagger, Tappable } from '../components/anim';
 
 export function TodoScreen({
@@ -51,13 +52,13 @@ export function TodoScreen({
         )}
         {open.map((t, i) => (
           <Animated.View key={t.id} entering={stagger(i)}>
-            <TodoRow task={t} tag={findTag(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+            <TodoRow task={t} tag={findTag(settings.tags, t.tagId)} clock={settings.clock} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
           </Animated.View>
         ))}
         {done.length > 0 && <Text style={styles.section}>COMPLETED · {done.length}</Text>}
         {done.map((t, i) => (
           <Animated.View key={t.id} entering={stagger(open.length + i)}>
-            <TodoRow task={t} tag={findTag(settings.tags, t.tagId)} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
+            <TodoRow task={t} tag={findTag(settings.tags, t.tagId)} clock={settings.clock} onToggle={() => toggleDone(t.id)} onOpen={() => onOpenInfo(t.id)} />
           </Animated.View>
         ))}
       </ScrollView>
@@ -65,8 +66,10 @@ export function TodoScreen({
   );
 }
 
-function TodoRow({ task, tag, onToggle, onOpen }: { task: Task; tag: Tag | null; onToggle: () => void; onOpen: () => void }) {
+function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag | null; clock: Clock; onToggle: () => void; onOpen: () => void }) {
   const tagColor = tag?.color || task.color;
+  const next = task.done ? null : nextCustom(task.reminders);
+  const remColor = task.reminders ? INTENSITY_COLOR[task.reminders.intensity] : C.muted;
   const subCount = task.subtasks.length;
   const subDone = task.subtasks.filter((s) => s.done).length;
   return (
@@ -86,6 +89,12 @@ function TodoRow({ task, tag, onToggle, onOpen }: { task: Task; tag: Tag | null;
             </View>
           )}
           {subCount > 0 && <Text style={styles.subCount}>☑ {subDone}/{subCount}</Text>}
+          {next && (
+            <View style={[styles.chip, styles.remChip, { backgroundColor: hexA(remColor, 0.12) }]}>
+              <Feather name="bell" size={10} color={remColor} />
+              <Text style={[styles.chipTxt, { color: remColor }]}>{customLabel(next, clock)}</Text>
+            </View>
+          )}
         </View>
       </View>
     </Tappable>
@@ -112,4 +121,5 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 7 },
   chipTxt: { fontSize: 10.5, fontWeight: '600' },
   subCount: { fontSize: 11.5, color: C.muted, fontWeight: '600' },
+  remChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

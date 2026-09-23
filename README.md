@@ -26,24 +26,39 @@ Gesture Handler, and react-native-svg.
   picker, a place picker, and a combined icon+color tile that opens a picker popup.
 - **Tags, sub-tags & places** — create your own in Settings; tags can have
   sub-tags, and places show with a 📍 marker on cards.
+- **Reminders** — per task: X minutes before it starts, X minutes after it
+  ends, and any number of custom date-and-time reminders (relative ones follow
+  the task when it moves and fire for every occurrence of a repeating task).
+  Three intensities: **Easy** (a notification), **Medium** (a full-screen
+  reminder over any app or the lock screen, one short buzz, and a
+  notification) and **Intense** (a full-screen alarm that rings and vibrates in
+  pulses until dismissed). Snooze, Done and Open task right from the
+  notification or the reminder screen. Built on exact alarms and a foreground
+  service, re-armed after reboots, app updates and time-zone changes, with a
+  reliability checklist (notifications, full-screen alerts, overlay, battery
+  optimization, vendor auto-start) in Settings → Reminders. The native side is
+  a local Expo module in `modules/reminders`.
 - **Stats** — completion ring, scheduled/completed/free hours, a scheduled-per-day
   bar chart (tap a bar to jump to that day), and time-by-tag bars.
 - **Settings** (the ☰ menu) — day window, gap-pill threshold, week-start day,
-  tag/sub-tag and place management, in-app update check, and data management.
+  reminder defaults and alarm sound, animation speed, tag/sub-tag and place
+  management, in-app update check, and data management.
 - **Offline & persistent** — everything is stored on-device with AsyncStorage.
 - **Self-updating** — checks GitHub Releases on launch and from Settings, then
   downloads and installs newer APKs.
 
-## Run it on your Android phone (fastest)
+## Run it on your Android phone
 
-1. Install the **Expo Go** app from the Play Store.
-2. On your computer, from this folder:
-   ```bash
-   npm install
-   npx expo start
-   ```
-3. Scan the QR code in the terminal with Expo Go (same Wi-Fi). The app loads
-   live; edits hot-reload.
+The app has its own native code (the reminders module, the keyboard
+controller), so **Expo Go can't run it** — install a release APK (below), or
+build a development build with the Android SDK installed:
+
+```bash
+npm install
+npx expo run:android
+```
+
+`npx expo start --web` runs the UI in a browser (reminders don't ring there).
 
 ## Releases & the installable APK
 

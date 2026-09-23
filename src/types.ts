@@ -12,6 +12,24 @@ export type Repeat = {
   endDate: string | null; // YYYY-MM-DD, or null = forever
 };
 
+// How hard a reminder tries to get your attention:
+//   easy    — a notification
+//   medium  — a full-screen reminder over any app + one short buzz + a notification
+//   intense — a full-screen alarm that rings and vibrates in pulses until dismissed
+export type ReminderIntensity = 'easy' | 'medium' | 'intense';
+
+// A reminder at a fixed local date & time (works for every task type).
+export type CustomReminder = { id: string; date: string; min: number }; // YYYY-MM-DD + minutes from midnight
+
+// A task's reminders. The relative ones follow the task when it moves (and fire
+// for every occurrence of a repeating task); custom ones stay at their date & time.
+export type Reminders = {
+  before: number | null; // minutes before the task starts (0 = at the start); null = off
+  after: number | null; // minutes after the task ends (0 = at the end); null = off
+  custom: CustomReminder[];
+  intensity: ReminderIntensity;
+};
+
 export type Task = {
   id: string;
   title: string;
@@ -29,6 +47,7 @@ export type Task = {
   repeat: Repeat | null; // recurrence rule (planned/allday)
   doneDates: string[]; // per-occurrence completion for repeating tasks
   expanded: boolean; // subtasks shown inline on the card (persisted)
+  reminders: Reminders | null; // null = no reminders
 };
 
 // A task being composed/edited in the editor sheet. `id` is absent when new.
@@ -77,4 +96,12 @@ export type Settings = {
   swapOnDrag: boolean; // dragging a task past another swaps them (off = allow overlap)
   animations: boolean; // app-wide animations on/off
   animScale: number; // animation duration scale, 0.5 (faster) … 4 (slower)
+  // Reminders
+  remindersOn: boolean; // master switch (off = nothing notifies or rings)
+  reminderDefault: { before: number | null; intensity: ReminderIntensity }; // what a new task starts with
+  snoozeMin: number; // snooze length (minutes)
+  ringMin: number; // how long an intense alarm rings before it gives up (minutes; 0 = until dismissed)
+  alarmSound: { uri: string; name: string } | null; // null = the phone's default alarm sound
+  alarmVibrate: boolean; // intense alarms vibrate in pulses
+  alarmGentle: boolean; // intense alarms fade in instead of starting at full volume
 };

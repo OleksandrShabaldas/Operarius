@@ -24,14 +24,16 @@ import { sp } from '../motion';
 
 // The recessed drum "deck": a shaded card holding one or more wheel columns,
 // with a highlighted centre band and a soft top/bottom vignette so the whole
-// chip reads as a rounded 3D drum (not two stray lines).
-function WheelDeck({ children }: { children: React.ReactNode }) {
+// chip reads as a rounded 3D drum (not two stray lines). `rows` (odd) sets
+// how many rows show — the default 5, or a compact 3.
+export function WheelDeck({ children, rows = VISIBLE }: { children: React.ReactNode; rows?: number }) {
+  const pad = ITEM_H * ((rows - 1) / 2);
   return (
-    <View style={styles.wheelRow}>
-      <View pointerEvents="none" style={styles.wheelBand} />
+    <View style={[styles.wheelRow, { height: ITEM_H * rows }]}>
+      <View pointerEvents="none" style={[styles.wheelBand, { top: pad - 1 }]} />
       {children}
-      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']} style={styles.vignetteTop} />
-      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']} style={styles.vignetteBottom} />
+      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']} style={[styles.vignetteTop, { height: pad }]} />
+      <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']} style={[styles.vignetteBottom, { height: pad }]} />
     </View>
   );
 }
@@ -39,7 +41,6 @@ function WheelDeck({ children }: { children: React.ReactNode }) {
 const ITEM_H = 40;
 const VISIBLE = 5; // odd — one centered row + two on each side
 const PAD = ITEM_H * ((VISIBLE - 1) / 2);
-const WHEEL_H = ITEM_H * VISIBLE;
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 function haptic() {
@@ -50,7 +51,7 @@ function haptic() {
 
 // A single item on the drum — scales/rotates/fades with its distance from the
 // centre so the column reads as a rounded 3D wheel.
-function WheelItem({ i, scrollY, label }: { i: number; scrollY: SharedValue<number>; label: string }) {
+function WheelItem({ i, scrollY, label, fontSize }: { i: number; scrollY: SharedValue<number>; label: string; fontSize?: number }) {
   const aStyle = useAnimatedStyle(() => {
     const pos = i - scrollY.value / ITEM_H; // 0 when this row is centred
     const abs = Math.abs(pos);
@@ -60,24 +61,30 @@ function WheelItem({ i, scrollY, label }: { i: number; scrollY: SharedValue<numb
     const color = interpolateColor(abs, [0, 0.85], [C.text, C.faint]);
     return { opacity, color, transform: [{ perspective: 520 }, { rotateX: `${rotateX}deg` }, { scale }] };
   });
-  return <Animated.Text style={[styles.wheelTxt, aStyle]}>{label}</Animated.Text>;
+  return <Animated.Text style={[styles.wheelTxt, fontSize ? { fontSize } : null, aStyle]}>{label}</Animated.Text>;
 }
 
 // A scrollable drum column. `index` is the selected row; the parent keeps it in
-// sync and the wheel reports back through `onIndex` once it settles.
-function Wheel({
+// sync and the wheel reports back through `onIndex` once it settles. `rows`
+// must match the deck's; `fontSize` shrinks long labels (e.g. "1h 30m").
+export function Wheel({
   values,
   index,
   onIndex,
   format,
   width,
+  rows = VISIBLE,
+  fontSize,
 }: {
   values: number[];
   index: number;
   onIndex: (i: number) => void;
   format: (v: number) => string;
   width: number;
+  rows?: number;
+  fontSize?: number;
 }) {
+  const pad = ITEM_H * ((rows - 1) / 2);
   const scrollY = useSharedValue(index * ITEM_H);
   const lastTick = useSharedValue(index);
   const ref = useRef<ScrollView>(null);
@@ -121,9 +128,10 @@ function Wheel({
   };
 
   return (
-    <View style={[styles.wheel, { width }]}>
+    <View style={[styles.wheel, { width, height: ITEM_H * rows }]}>
       <Animated.ScrollView
         ref={ref as any}
+        nestedScrollEnabled // a wheel inside a scrolling sheet (Android)
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_H}
         decelerationRate="fast"
@@ -131,9 +139,9 @@ function Wheel({
         onScroll={handler}
         onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => settle(e.nativeEvent.contentOffset.y)}
         onScrollEndDrag={(e: NativeSyntheticEvent<NativeScrollEvent>) => settle(e.nativeEvent.contentOffset.y)}
-        contentContainerStyle={{ paddingVertical: PAD }}>
+        contentContainerStyle={{ paddingVertical: pad }}>
         {values.map((v, i) => (
-          <WheelItem key={i} i={i} scrollY={scrollY} label={format(v)} />
+          <WheelItem key={i} i={i} scrollY={scrollY} label={format(v)} fontSize={fontSize} />
         ))}
       </Animated.ScrollView>
     </View>
@@ -251,6 +259,45 @@ export type BetweenConfig = {
 
 const anchorTime = (kind: 'after' | 'until', o: Neighbor, gap: number) => (kind === 'after' ? o.end + gap : o.start - gap);
 
+// ---- Time-of-day drums (hours : minutes [AM/PM]) ---------------------------
+export function TimeWheels({
+  value,
+  clock,
+  min = 0,
+  max = 24 * 60 - 5,
+  onChange,
+}: {
+  value: number;
+  clock: Clock;
+  min?: number;
+  max?: number;
+  onChange: (v: number) => void;
+}) {
+  const is12 = clock === '12h';
+  const h24 = Math.floor(value / 60) % 24;
+  const minVal = value % 60;
+  const minIdx = Math.round(minVal / 5) % 12;
+  const hourIdx = is12 ? (h24 % 12 === 0 ? 11 : (h24 % 12) - 1) : h24;
+  const ampmIdx = h24 < 12 ? 0 : 1;
+
+  const hourValues = is12 ? range(1, 12, 1) : range(0, 23, 1);
+  const minuteValues = range(0, 55, 5);
+
+  const commit = (hIdx: number, mIdx: number, apIdx: number) => {
+    const h = is12 ? ((hIdx + 1) % 12) + (apIdx ? 12 : 0) : hIdx;
+    onChange(Math.max(min, Math.min(max, h * 60 + mIdx * 5)));
+  };
+
+  return (
+    <WheelDeck>
+      <Wheel values={hourValues} index={hourIdx} onIndex={(i) => commit(i, minIdx, ampmIdx)} format={(v) => pad2(v)} width={64} />
+      <Text style={styles.colon}>:</Text>
+      <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(hourIdx, i, ampmIdx)} format={(v) => pad2(v)} width={64} />
+      {is12 && <Wheel values={[0, 1]} index={ampmIdx} onIndex={(i) => commit(hourIdx, minIdx, i)} format={(v) => (v === 0 ? 'AM' : 'PM')} width={64} />}
+    </WheelDeck>
+  );
+}
+
 // ---- Time-of-day picker (separate hour / minute drums) --------------------
 export function TimePickerPopup({
   visible,
@@ -284,34 +331,11 @@ export function TimePickerPopup({
     if (visible) setPage('time');
   }, [visible]);
 
-  const is12 = clock === '12h';
-  const h24 = Math.floor(value / 60) % 24;
-  const minVal = value % 60;
-  const minIdx = Math.round(minVal / 5) % 12;
-  const hourIdx = is12 ? (h24 % 12 === 0 ? 11 : (h24 % 12) - 1) : h24;
-  const ampmIdx = h24 < 12 ? 0 : 1;
-
-  const hourValues = is12 ? range(1, 12, 1) : range(0, 23, 1);
-  const minuteValues = range(0, 55, 5);
-
-  const commit = (hIdx: number, mIdx: number, apIdx: number) => {
-    const h = is12 ? ((hIdx + 1) % 12) + (apIdx ? 12 : 0) : hIdx;
-    const v = Math.max(min, Math.min(max, h * 60 + mIdx * 5));
-    onChange(v);
-  };
-
   return (
     <CenterPopup visible={visible} title={title} onClose={onClose}>
       {page === 'time' || !anchor ? (
         <Appear key="time" from="left" distance={14}>
-          <WheelDeck>
-            <Wheel values={hourValues} index={hourIdx} onIndex={(i) => commit(i, minIdx, ampmIdx)} format={(v) => pad2(v)} width={64} />
-            <Text style={styles.colon}>:</Text>
-            <Wheel values={minuteValues} index={minIdx} onIndex={(i) => commit(hourIdx, i, ampmIdx)} format={(v) => pad2(v)} width={64} />
-            {is12 && (
-              <Wheel values={[0, 1]} index={ampmIdx} onIndex={(i) => commit(hourIdx, minIdx, i)} format={(v) => (v === 0 ? 'AM' : 'PM')} width={64} />
-            )}
-          </WheelDeck>
+          <TimeWheels value={value} clock={clock} min={min} max={max} onChange={onChange} />
           <Presets presets={presets} tagPresets={tagPresets} tagName={tagName} value={value} format={(v) => fmt(v, clock)} onPick={onChange} />
           {anchor && (
             <>
@@ -898,7 +922,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
-    height: WHEEL_H,
+    height: ITEM_H * VISIBLE,
     backgroundColor: 'rgba(255,255,255,0.035)',
     borderRadius: 18,
     overflow: 'hidden',
@@ -917,7 +941,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.09)',
     boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08), 0 2px 10px -4px rgba(0,0,0,0.5)',
   },
-  wheel: { height: WHEEL_H, overflow: 'hidden' },
+  wheel: { overflow: 'hidden' },
   wheelTxt: { height: ITEM_H, lineHeight: ITEM_H, textAlign: 'center', fontSize: 23, fontWeight: '700', fontVariant: ['tabular-nums'] },
   colon: { fontSize: 23, fontWeight: '800', color: C.text, marginHorizontal: 1 },
   unit: { fontSize: 15, fontWeight: '700', color: C.muted, marginHorizontal: 2 },

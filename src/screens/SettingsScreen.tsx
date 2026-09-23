@@ -16,15 +16,17 @@ import { PlaceEditorPopup } from '../components/PlaceEditorPopup';
 import { ColorSwatch, CustomColorGrid, CustomIconInput, IconCell, IconGrid, PaletteRow, SlotGrid } from '../components/ColorIcon';
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
 import { CenterPopup } from '../components/Overlay';
+import { ReminderSettings } from '../components/ReminderSettings';
 import { Appear, Tappable } from '../components/anim';
 
 const Pressable = Tappable; // every tappable control gets press feedback
 
-type Category = 'general' | 'appearance' | 'motion' | 'tags' | 'places' | 'presets' | 'data' | 'about';
+type Category = 'general' | 'reminders' | 'appearance' | 'motion' | 'tags' | 'places' | 'presets' | 'data' | 'about';
 type Prompt = { title: string; initial: string; submitLabel: string; onSubmit: (t: string) => void };
 
 const CATS: { id: Category; label: string; icon: keyof typeof Feather.glyphMap; sub: string }[] = [
   { id: 'general', label: 'General', icon: 'sliders', sub: 'Day window, week start, gaps' },
+  { id: 'reminders', label: 'Reminders', icon: 'bell', sub: 'Defaults, alarm sound, reliability' },
   { id: 'appearance', label: 'Appearance', icon: 'droplet', sub: 'Time format, colors & icons' },
   { id: 'motion', label: 'Animations', icon: 'wind', sub: 'On / off and speed' },
   { id: 'tags', label: 'Tags', icon: 'tag', sub: 'Tags, sub-tags & week dots' },
@@ -157,6 +159,8 @@ export function SettingsScreen({
             </Text>
           </View>
         )}
+
+        {cat === 'reminders' && <ReminderSettings />}
 
         {cat === 'appearance' && (
           <View style={{ marginTop: 10 }}>

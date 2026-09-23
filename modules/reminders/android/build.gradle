@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.operarius.reminders'
+version = '1.0.0'
+
+android {
+  namespace "com.operarius.reminders"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  lint {
+    abortOnError false
+    // Release builds would run lint-vital on this module too; it adds nothing
+    // here and only costs build time and memory.
+    checkReleaseBuilds false
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.17.0"
+}

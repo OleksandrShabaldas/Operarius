@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, StyleSheet, View } from 'react-native';
+import { Alert, BackHandler, Linking, StyleSheet, View } from 'react-native';
 import Animated, { ReducedMotionConfig, ReduceMotion, SlideInRight, SlideOutRight } from 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,6 +14,7 @@ import { AppProvider, useApp } from './src/store';
 import { Draft, TaskType } from './src/types';
 import { parseId } from './src/recurrence';
 import { todayKey } from './src/utils';
+import { carryReminders, defaultReminders, useReminderSync } from './src/reminders';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TodoScreen } from './src/screens/TodoScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
@@ -47,7 +48,7 @@ function BackgroundGlow() {
 
 function Root() {
   const app = useApp();
-  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, toggleDone, toggleSubtask } = app;
+  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, toggleDone, setDone, toggleSubtask } = app;
 
   const [tab, setTab] = useState<Tab>('today');
   const [overlay, setOverlay] = useState<'stats' | 'settings' | null>(null);
@@ -86,6 +87,46 @@ function Root() {
   useEffect(() => {
     if (loaded) SplashScreen.hideAsync().catch(() => {});
   }, [loaded]);
+
+  // Reminders: keep the phone's alarms matching the tasks, and apply "Done"
+  // pressed on a notification / the reminder screen while the app was closed.
+  useReminderSync({ loaded, tasks, settings, onDone: (key) => setDone(key, true) });
+
+  // Tapping a reminder (or "Open task" on its screen) opens the app on that
+  // task: operarius://task?key=<task>&date=<day>.
+  const linkRef = useRef({ tasks });
+  linkRef.current = { tasks };
+  const openFromLink = useCallback((url: string | null) => {
+    if (!url || !url.startsWith('operarius://task')) return;
+    const q = url.split('?')[1] ?? '';
+    const params: Record<string, string> = {};
+    q.split('&').forEach((kv) => {
+      const [k, v] = kv.split('=');
+      if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? '');
+    });
+    const key = params.key;
+    if (!key) return;
+    const base = linkRef.current.tasks.find((t) => t.id === parseId(key).baseId);
+    if (!base) return;
+    setOverlay(null);
+    if (base.type === 'todo') setTab('todo');
+    else {
+      setTab('today');
+      setSelectedKey(params.date || base.date || todayKey());
+    }
+    // Let the day land first, then open the task's info.
+    setTimeout(() => setViewId(key), ms(360) + 60);
+  }, []);
+  const didLink = useRef(false);
+  useEffect(() => {
+    if (!loaded) return;
+    if (!didLink.current) {
+      didLink.current = true;
+      Linking.getInitialURL().then(openFromLink).catch(() => {});
+    }
+    const sub = Linking.addEventListener('url', (e) => openFromLink(e.url));
+    return () => sub.remove();
+  }, [loaded, openFromLink]);
 
   // Android hardware back: close overlays / return to Today before exiting.
   // (Modals — editor, info, pickers — consume back via their own onRequestClose.)
@@ -142,9 +183,10 @@ function Root() {
         repeat: null,
         doneDates: [],
         expanded: false,
+        reminders: defaultReminders(settings), // Settings → Reminders → New tasks
       });
     },
-    [tab, selectedKey, settings.dayStart, settings.dayEnd, tasksForDay]
+    [tab, selectedKey, settings, tasksForDay]
   );
 
   // Close the info sheet first, then open the editor a beat later, so the two
@@ -168,8 +210,10 @@ function Root() {
     if (base) {
       const { id: _id, done: _done, doneDates: _dd, ...rest } = base;
       setAutoDate(true);
-      setDraftTouched(['emoji', 'color', 'type', 'start', 'dur', 'tagId', 'placeId', 'notes', 'subtasks', 'repeat']);
-      setTimeout(() => setDraft({ ...rest, done: false, doneDates: [], expanded: false, subtasks: base.subtasks.map((s) => ({ ...s, done: false })) }), ms(230) + 30);
+      setDraftTouched(['emoji', 'color', 'type', 'start', 'dur', 'tagId', 'placeId', 'notes', 'subtasks', 'repeat', 'reminders']);
+      // Reminders come along — the relative ones, and custom ones still ahead.
+      const reminders = carryReminders(base.reminders);
+      setTimeout(() => setDraft({ ...rest, done: false, doneDates: [], expanded: false, reminders, subtasks: base.subtasks.map((s) => ({ ...s, done: false })) }), ms(230) + 30);
     }
   }, [viewId, tasks]);
 

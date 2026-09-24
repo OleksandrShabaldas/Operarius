@@ -7,10 +7,14 @@ import { ms, sp } from '../motion';
 import { hexA } from '../utils';
 import { Appear, Tappable } from './anim';
 
-// A task's completion box. With subtasks it fills up as they're ticked off,
-// and the task only completes once all of them are: ticking it early shakes
-// the box with a warning buzz and calls `onBlocked`, so the screen can show
-// what's still open.
+// Why the box refused: subtasks still open, or all done (the task's done
+// state then follows its subtasks — untick one to reopen it).
+export type CheckBlock = 'open' | 'locked';
+
+// A task's completion box. With subtasks it fills up as they're ticked off
+// and follows them: it can't be ticked while any are open, nor unticked while
+// all are done. Either way the box shakes and `onBlocked` says why, so the
+// screen can explain.
 export function TaskCheck({
   color,
   done,
@@ -28,7 +32,7 @@ export function TaskCheck({
   size?: number;
   radius?: number;
   onToggle: () => void;
-  onBlocked?: () => void;
+  onBlocked?: (why: CheckBlock) => void;
 }) {
   const shakeX = useSharedValue(0);
   const fill = useSharedValue(0);
@@ -38,17 +42,26 @@ export function TaskCheck({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress]);
 
+  const shake = () => {
+    shakeX.value = withSequence(
+      withTiming(-5, { duration: ms(45) }),
+      withTiming(5, { duration: ms(70) }),
+      withTiming(-4, { duration: ms(65) }),
+      withTiming(3, { duration: ms(60) }),
+      withTiming(0, { duration: ms(55) })
+    );
+  };
   const press = () => {
     if (!done && subLeft > 0) {
-      shakeX.value = withSequence(
-        withTiming(-5, { duration: ms(45) }),
-        withTiming(5, { duration: ms(70) }),
-        withTiming(-4, { duration: ms(65) }),
-        withTiming(3, { duration: ms(60) }),
-        withTiming(0, { duration: ms(55) })
-      );
+      shake();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-      onBlocked?.();
+      onBlocked?.('open');
+      return;
+    }
+    if (done && subTotal > 0 && subLeft === 0) {
+      shake();
+      Haptics.selectionAsync().catch(() => {});
+      onBlocked?.('locked');
       return;
     }
     if (done) Haptics.selectionAsync().catch(() => {});

@@ -19,13 +19,14 @@ import { DayState } from '../components/TaskCard';
 import { RollingText } from '../components/RollingText';
 import { MonthView } from '../components/MonthView';
 import { Tappable } from '../components/anim';
+import { StarMark } from '../components/StarToggle';
 
 type Props = {
   selectedKey: string;
   setSelectedKey: (key: string) => void;
   onOpenStats: () => void;
   onOpenSettings: () => void;
-  onNewTask: (opts?: { startMin?: number; type?: TaskType }) => void;
+  onNewTask: (opts?: { startMin?: number; dur?: number; type?: TaskType }) => void;
   onOpenInfo: (id: string) => void;
   todayPing: number; // bumps when the Today tab is tapped while already open
 };
@@ -71,7 +72,8 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
 
   const dayTasks = useMemo(() => tasksForDay(selectedKey), [tasksForDay, selectedKey]);
   const planned = useMemo(() => dayTasks.filter((t) => t.type === 'planned'), [dayTasks]);
-  const allday = useMemo(() => dayTasks.filter((t) => t.type === 'allday'), [dayTasks]);
+  // All-day chips: starred (high priority) first.
+  const allday = useMemo(() => dayTasks.filter((t) => t.type === 'allday').sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)), [dayTasks]);
   const { dayNum, weekday, month } = headerParts(selectedKey);
   const today = todayKey();
   const isToday = selectedKey === today;
@@ -400,6 +402,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
                   <LinearGradient colors={[t.color, hexA(t.color, 0.72)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.alldayIcon}>
                     <Text style={styles.alldayEmoji}>{t.emoji}</Text>
                   </LinearGradient>
+                  {!!t.starred && <StarMark size={12} style={{ marginRight: -3 }} />}
                   <Text style={[styles.alldayTitle, t.done && styles.strike]} numberOfLines={1}>
                     {t.title}
                   </Text>
@@ -440,7 +443,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
                 onToggle={toggleDone}
                 onToggleSubtask={toggleSubtask}
                 onToggleExpanded={toggleExpanded}
-                onAddAt={(startMin) => onNewTask({ startMin, type: 'planned' })}
+                onAddAt={(startMin, dur) => onNewTask({ startMin, dur, type: 'planned' })}
               />
             </Animated.ScrollView>
           </View>

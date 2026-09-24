@@ -11,7 +11,8 @@ import { findTag, hexA } from '../utils';
 import { Clock, Tag } from '../types';
 import { customLabel, INTENSITY_COLOR, nextCustom } from '../reminders';
 import { Appear, stagger, Tappable } from '../components/anim';
-import { TaskCheck } from '../components/TaskCheck';
+import { CheckBlock, TaskCheck } from '../components/TaskCheck';
+import { StarMark } from '../components/StarToggle';
 
 export function TodoScreen({
   onOpenInfo,
@@ -26,7 +27,8 @@ export function TodoScreen({
   const { tasks, settings, toggleDone } = useApp();
 
   const todos = useMemo(() => tasks.filter((t) => t.type === 'todo'), [tasks]);
-  const open = todos.filter((t) => !t.done);
+  // Starred (high priority) first.
+  const open = todos.filter((t) => !t.done).sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
   const done = todos.filter((t) => t.done);
 
   return (
@@ -73,24 +75,31 @@ function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag 
   const remColor = task.reminders ? INTENSITY_COLOR[task.reminders.intensity] : C.muted;
   const subCount = task.subtasks.length;
   const subDone = task.subtasks.filter((s) => s.done).length;
-  // Ticked with subtasks still open: the count says what's left for a moment.
-  const [nudge, setNudge] = useState(0);
+  // The box follows the subtasks; when it refuses, the count says why for a
+  // moment (what's still open, or to untick one to reopen the task).
+  const [nudge, setNudge] = useState<{ n: number; why: CheckBlock }>({ n: 0, why: 'open' });
   const [hint, setHint] = useState(false);
   useEffect(() => {
-    if (!nudge) return;
+    if (!nudge.n) return;
     setHint(true);
     const h = setTimeout(() => setHint(false), 2400);
     return () => clearTimeout(h);
-  }, [nudge]);
-  const warn = hint && subDone < subCount;
+  }, [nudge.n]);
+  const warn = hint && nudge.why === 'open' && subDone < subCount;
+  const locked = hint && nudge.why === 'locked' && subDone === subCount;
   return (
     <Tappable style={styles.row} onPress={onOpen}>
-      <TaskCheck color={task.color} done={task.done} subTotal={subCount} subLeft={subCount - subDone} onToggle={onToggle} onBlocked={() => setNudge((n) => n + 1)} />
+      <TaskCheck color={task.color} done={task.done} subTotal={subCount} subLeft={subCount - subDone} onToggle={onToggle} onBlocked={(why) => setNudge((x) => ({ n: x.n + 1, why }))} />
       <LinearGradient colors={[task.color, hexA(task.color, 0.72)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.icon}>
         <Text style={styles.iconTxt}>{task.emoji}</Text>
       </LinearGradient>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.rowTitle, task.done && styles.strike]} numberOfLines={1}>{task.title}</Text>
+        <View style={styles.titleRow}>
+          {!!task.starred && <StarMark size={13} style={styles.star} />}
+          <Text style={[styles.rowTitle, task.done && styles.strike]} numberOfLines={1}>
+            {task.title}
+          </Text>
+        </View>
         <View style={styles.metaRow}>
           {!!tag && (
             <View style={[styles.chip, { backgroundColor: hexA(tagColor, 0.15) }]}>
@@ -99,11 +108,16 @@ function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag 
           )}
           {subCount > 0 &&
             (warn ? (
-              <Appear key={nudge} from="left" distance={8} style={styles.subWarn}>
+              <Appear key={nudge.n} from="left" distance={8} style={styles.subWarn}>
                 <Feather name="lock" size={10} color={C.now} />
                 <Text style={[styles.subCount, { color: C.now }]}>
                   {subCount - subDone === 1 ? '1 subtask left' : `${subCount - subDone} subtasks left`}
                 </Text>
+              </Appear>
+            ) : locked ? (
+              <Appear key={nudge.n} from="left" distance={8} style={styles.subWarn}>
+                <Feather name="rotate-ccw" size={10} color={C.accentB} />
+                <Text style={[styles.subCount, { color: C.accentB }]}>Untick a subtask to reopen</Text>
               </Appear>
             ) : (
               <View style={styles.subWarn}>
@@ -138,7 +152,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 8, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.05)' },
   icon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 18 },
-  rowTitle: { fontSize: 15.5, fontWeight: '600', color: C.text },
+  rowTitle: { flexShrink: 1, fontSize: 15.5, fontWeight: '600', color: C.text },
+  titleRow: { flexDirection: 'row', alignItems: 'center' },
+  star: { marginRight: 5 },
   strike: { textDecorationLine: 'line-through', color: '#6a6a72' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   chip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 7 },

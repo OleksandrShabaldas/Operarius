@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, LinearTransition, runOnJS, runOnUI, SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { ms, sp } from '../motion';
@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Place, Tag, Task } from '../types';
-import { C, LANE_R, PILL_GAP, PILL_L, PILL_W } from '../theme';
+import { BAND_W, C, CARD_L, LANE_R } from '../theme';
 import { fmt, fmtDur, findTag, hexA, placeLabel, shade, tagLabel } from '../utils';
 import { INTENSITY_COLOR, remindsAtAll } from '../reminders';
 import { openSubtasks } from '../recurrence';
@@ -15,7 +15,8 @@ import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
 import { Stripes } from './Stripes';
 import { Appear, stagger, Tappable } from './anim';
-import { TaskCheck } from './TaskCheck';
+import { CheckBlock, TaskCheck } from './TaskCheck';
+import { StarMark } from './StarToggle';
 
 export type DayState = 'past' | 'today' | 'future';
 
@@ -56,9 +57,12 @@ function CardFace({ task, s, end, clock, tags, places, past }: { task: Task; s: 
   const placeTxt = placeLabel(places, task.placeId);
   return (
     <View style={styles.body}>
-      <Text numberOfLines={1} style={[styles.title, task.done && styles.strike]}>
-        {task.title}
-      </Text>
+      <View style={styles.titleRow}>
+        {!!task.starred && <StarMark size={13} style={styles.star} />}
+        <Text numberOfLines={1} style={[styles.title, task.done && styles.strike]}>
+          {task.title}
+        </Text>
+      </View>
       <View style={styles.timeRow}>
         <Text numberOfLines={1} style={styles.time}>
           {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
@@ -95,8 +99,11 @@ function CardFace({ task, s, end, clock, tags, places, past }: { task: Task; s: 
 
 // Inline subtask strip at the bottom of a card: a "n/m subtasks" toggle that
 // expands to show tappable subtask rows. Expanded state is persisted per task.
-// `nudge` bumps when the task was ticked with subtasks still open: the strip
-// then says what's left and the open boxes light up.
+// `nudge` bumps when the task's box refused: with subtasks still open the
+// strip says what's left and the open boxes light up; with all of them done it
+// says to untick one to reopen the task.
+export type Nudge = { n: number; why: CheckBlock };
+
 function SubtaskStrip({
   task,
   collapsed,
@@ -106,7 +113,7 @@ function SubtaskStrip({
 }: {
   task: Task;
   collapsed?: boolean; // held in a drag: keep the card compact
-  nudge: number;
+  nudge: Nudge;
   onToggleExpanded: () => void;
   onToggleSubtask: (subId: string) => void;
 }) {
@@ -116,12 +123,13 @@ function SubtaskStrip({
   const open = task.expanded && !collapsed;
   const [hint, setHint] = useState(false);
   useEffect(() => {
-    if (!nudge) return;
+    if (!nudge.n) return;
     setHint(true);
     const t = setTimeout(() => setHint(false), 2400);
     return () => clearTimeout(t);
-  }, [nudge]);
-  const warn = hint && left > 0;
+  }, [nudge.n]);
+  const warn = hint && nudge.why === 'open' && left > 0;
+  const locked = hint && nudge.why === 'locked' && left === 0;
   // Ticking the last open subtask completes the task — that one lands firmer.
   const tick = (id: string, wasDone: boolean) => {
     if (!wasDone && left === 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -138,10 +146,18 @@ function SubtaskStrip({
           </Text>
         </Tappable>
         {warn && (
-          <Appear key={nudge} from="left" distance={10} style={styles.subHint}>
+          <Appear key={nudge.n} from="left" distance={10} style={styles.subHint}>
             <Feather name="lock" size={10} color={C.now} />
             <Text numberOfLines={1} style={styles.subHintTxt}>
               {left === 1 ? 'Finish the last one first' : `Finish these ${left} first`}
+            </Text>
+          </Appear>
+        )}
+        {locked && (
+          <Appear key={nudge.n} from="left" distance={10} style={styles.subHint}>
+            <Feather name="rotate-ccw" size={10} color={C.accentB} />
+            <Text numberOfLines={1} style={[styles.subHintTxt, { color: C.accentB }]}>
+              Untick a subtask to reopen
             </Text>
           </Appear>
         )}
@@ -211,7 +227,7 @@ function TaskCardBase(props: Props) {
   const scale = useSharedValue(1);
   const draggingRef = useRef(false);
   const [endTick, setEndTick] = useState(0);
-  const [nudge, setNudge] = useState(0);
+  const [nudge, setNudge] = useState<Nudge>({ n: 0, why: 'open' });
 
   // Settle into the resting slot. After a drop, start from exactly where the
   // card is on screen (atomically on the UI thread) so it glides, never jumps.
@@ -293,41 +309,35 @@ function TaskCardBase(props: Props) {
   };
   const open = () => props.onOpen(task.id);
 
-  // The pill and the card are both handles (long-press to drag, tap to open);
-  // each detector needs its own gesture instance.
-  const makeGesture = () => {
-    const pan = Gesture.Pan()
-      .activateAfterLongPress(320)
-      .onStart(() => {
-        'worklet';
-        baseS.value = topSV.value;
-        dyS.value = 0;
-        scroll0.value = scrollY.value;
-        snapMix.value = 0;
-        dragging.value = 1;
-        runOnJS(beginDrag)();
-      })
-      .onUpdate((e) => {
-        'worklet';
-        dyS.value = e.translationY;
-        runOnJS(moveDrag)(e.translationY, e.absoluteY);
-      })
-      .onFinalize(() => {
-        'worklet';
-        runOnJS(endDrag)();
-      });
-    const tap = Gesture.Tap().onEnd((_e, ok) => {
+  // The whole card is the handle: long-press anywhere to drag it. A tap
+  // anywhere opens the task (a Pressable, so the checkbox and subtask rows
+  // inside keep their own taps); once the drag takes over it cancels the tap.
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(320)
+    .onStart(() => {
       'worklet';
-      if (ok) runOnJS(open)();
+      baseS.value = topSV.value;
+      dyS.value = 0;
+      scroll0.value = scrollY.value;
+      snapMix.value = 0;
+      dragging.value = 1;
+      runOnJS(beginDrag)();
+    })
+    .onUpdate((e) => {
+      'worklet';
+      dyS.value = e.translationY;
+      runOnJS(moveDrag)(e.translationY, e.absoluteY);
+    })
+    .onFinalize(() => {
+      'worklet';
+      runOnJS(endDrag)();
     });
-    return Gesture.Exclusive(pan, tap);
-  };
 
-  // A task is complete only once all its subtasks are: ticking it with some
-  // still open (the box shakes) folds the subtasks open and says what's left.
-  const blocked = () => {
+  // The box follows the subtasks: refused with some open (they fold open and
+  // say what's left) or with all done (untick one to reopen the task).
+  const blocked = (why: CheckBlock) => {
     if (!task.expanded) props.onToggleExpanded(task.id);
-    setNudge((n) => n + 1);
+    setNudge((x) => ({ n: x.n + 1, why }));
   };
 
   const wrapStyle = useAnimatedStyle(() => {
@@ -345,10 +355,10 @@ function TaskCardBase(props: Props) {
   const hasMeta = !!task.tagId || !!task.placeId;
 
   // Visual state:
-  //  • whole day in the past → fully grayscale (history), "Missed" if not done
+  //  • behind the now line (or on a past day) → fully grayscale; "Missed" (red
+  //    corner badge, left in colour) if it wasn't done
   //  • done                  → fully grayscale (a touch darker once it's past)
   //  • in-progress           → the elapsed portion grayscales (progress)
-  //  • past + not done       → "Missed" (elapsed grayscale, red corner badge)
   const isPastDay = props.dayState === 'past';
   const isFutureDay = props.dayState === 'future';
   const past = isPastDay || (nowMin != null && end <= nowMin);
@@ -358,14 +368,14 @@ function TaskCardBase(props: Props) {
   // (in step with the now line, which crosses the card at the same height).
   let elapsed: number | null | undefined;
   if (!isDragging) {
-    if (task.done || isPastDay) elapsed = null;
+    if (task.done || past) elapsed = null;
     else if (inProgress) {
       const h = Math.round(((nowMin! - s) / task.dur) * pos.h);
       if (h >= 2) elapsed = h;
     }
   }
-  const dimAlpha = task.done ? (past ? 0.46 : 0.2) : isPastDay ? 0.42 : 0.32;
-  const grey = task.done || isPastDay;
+  const dimAlpha = task.done ? (past ? 0.46 : 0.2) : past ? 0.42 : 0.32;
+  const grey = task.done || past;
 
   // Fused edges (overlap stacks) square off so the stack reads as one shape —
   // also for the held card at a landing spot where it fuses.
@@ -388,57 +398,49 @@ function TaskCardBase(props: Props) {
   const cardRing = `inset 0 0 0 1px ${hexA(edge, isDragging ? 0.55 : 0.16)}`;
   // A greyed (done / past) task keeps its depth but loses its coloured halo.
   // (Same shadow list either way — a removed boxShadow can linger on Android.)
-  const cardGlow = `0 0 24px -6px ${grey && !isDragging ? 'rgba(0,0,0,0)' : hexA(edge, isDragging ? 0.7 : 0.3)}` + (isDragging && !snapped ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : '');
-  const pillGlow = `0 6px 16px -6px ${grey && !isDragging ? 'rgba(0,0,0,0.55)' : hexA(color, 0.85)}` + (warn ? `, 0 0 0 2px ${hexA(C.now, 0.75)}` : '') + (isDragging && !snapped ? ', 0 18px 34px -12px rgba(0,0,0,.8)' : '');
+  const cardGlow =
+    `0 0 24px -6px ${grey && !isDragging ? 'rgba(0,0,0,0)' : hexA(edge, isDragging ? 0.7 : 0.3)}` +
+    (warn ? `, 0 0 0 2px ${hexA(C.now, 0.7)}` : ', 0 0 0 0 rgba(0,0,0,0)') +
+    (isDragging && !snapped ? ', 0 22px 44px -12px rgba(0,0,0,.85)' : '');
 
-  // Height changes (subtasks folding open/closed) glide, pill and card in step.
+  // Height changes (subtasks folding open/closed) glide.
   // Native only: the web implementation measures on-screen rects, which scrolling shifts.
   const lt = Platform.OS === 'web' ? undefined : LinearTransition.duration(ms(220)).easing(Easing.out(Easing.cubic));
 
   return (
     <Animated.View style={[styles.wrap, wrapStyle, { zIndex: isDragging ? 50 : 2 }]} entering={stagger(props.index)}>
-      <Animated.View style={[styles.row, liftStyle]}>
-        {/* The task's colour + icon, standing on the timeline rail. */}
-        <GestureDetector gesture={makeGesture()}>
-          <Animated.View layout={lt} style={[styles.pill, { height: pos.h, boxShadow: pillGlow }]}>
-            <View style={styles.pillInner}>
-              {/* Opaque, so nothing shows through while it's carried over the day. */}
-              <LinearGradient colors={[color, shade(color, 0.28)]} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={StyleSheet.absoluteFill} />
-              <Text style={styles.pillTxt}>{task.emoji}</Text>
-              {elapsed !== undefined && <Elapsed h={elapsed} alpha={dimAlpha} />}
-            </View>
-          </Animated.View>
-        </GestureDetector>
-
-        <Animated.View layout={lt} style={[styles.cardShell, radii, { minHeight: pos.h, boxShadow: cardGlow }]}>
-          <View style={[styles.card, radii, { boxShadow: cardRing }]}>
-            {/* A breath of the task's colour, continuing from its pill. */}
-            <LinearGradient pointerEvents="none" colors={[hexA(color, 0.075), hexA(color, 0)]} start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 0 }} style={StyleSheet.absoluteFill} />
-
-            <View style={styles.cardMain}>
-              <GestureDetector gesture={makeGesture()}>
-                <Animated.View style={styles.grab}>
-                  <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} past={isPastDay} />
-                </Animated.View>
-              </GestureDetector>
-
-              {/* When "Missed" occupies the corner, the checkbox drops to the bottom
-                  of the row so the two never collide on short cards. */}
-              <View style={missed && !hasMeta ? styles.checkLow : null}>
-                <TaskCheck color={color} done={task.done} subTotal={subTotal} subLeft={subLeft} onToggle={() => props.onToggle(task.id)} onBlocked={blocked} />
+      <GestureDetector gesture={pan}>
+        <Animated.View style={liftStyle}>
+          <Animated.View layout={lt} style={[styles.shell, radii, { minHeight: pos.h, boxShadow: cardGlow }]}>
+            <Pressable onPress={open} style={[styles.card, radii, { boxShadow: cardRing }]}>
+              {/* The task's colour + icon: the card's left edge, standing on the timeline rail. */}
+              <View style={styles.band}>
+                <LinearGradient colors={[color, shade(color, 0.28)]} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={StyleSheet.absoluteFill} />
+                <Text style={styles.bandEmoji}>{task.emoji}</Text>
               </View>
-            </View>
 
-            {subTotal > 0 && (
-              <SubtaskStrip task={task} collapsed={isDragging} nudge={nudge} onToggleExpanded={() => props.onToggleExpanded(task.id)} onToggleSubtask={(sid) => props.onToggleSubtask(task.id, sid)} />
-            )}
+              <View style={styles.main}>
+                <View style={styles.cardMain}>
+                  <CardFace task={task} s={s} end={end} clock={clock} tags={tags} places={places} past={past} />
+                  {/* When "Missed" occupies the corner, the checkbox drops to the bottom
+                      of the row so the two never collide on short cards. */}
+                  <View style={missed && !hasMeta ? styles.checkLow : null}>
+                    <TaskCheck color={color} done={task.done} subTotal={subTotal} subLeft={subLeft} onToggle={() => props.onToggle(task.id)} onBlocked={blocked} />
+                  </View>
+                </View>
 
-            {elapsed !== undefined && <Elapsed h={elapsed} alpha={dimAlpha} />}
+                {subTotal > 0 && (
+                  <SubtaskStrip task={task} collapsed={isDragging} nudge={nudge} onToggleExpanded={() => props.onToggleExpanded(task.id)} onToggleSubtask={(sid) => props.onToggleSubtask(task.id, sid)} />
+                )}
+              </View>
 
-            {missed && <MissedBadge />}
-          </View>
+              {elapsed !== undefined && <Elapsed h={elapsed} alpha={dimAlpha} />}
+
+              {missed && <MissedBadge />}
+            </Pressable>
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </GestureDetector>
     </Animated.View>
   );
 }
@@ -460,29 +462,14 @@ export const TaskCard = React.memo(TaskCardBase, (prev, next) => {
 });
 
 const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: PILL_L, right: LANE_R },
-  row: { flexDirection: 'row', gap: PILL_GAP },
-  // Emoji centred on the card's title + time lines (the middle of a minimum-height card).
-  // Exactly the slot's height (the card is sized to it too): a pill stretched by
-  // the row picks up in-between layouts, and its glow can keep a stale outline.
-  pill: { width: PILL_W, alignSelf: 'flex-start', borderRadius: PILL_W / 2 },
-  pillInner: {
-    flex: 1,
-    borderRadius: PILL_W / 2,
-    overflow: 'hidden',
-    alignItems: 'center',
-    paddingTop: 17,
-  },
-  pillTxt: { fontSize: 19, lineHeight: 26 },
-  cardShell: { flex: 1 },
-  card: {
-    flexGrow: 1,
-    position: 'relative',
-    overflow: 'hidden',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: C.card,
-  },
+  wrap: { position: 'absolute', left: CARD_L, right: LANE_R },
+  // Glow on the shell; content — and the greying blend overlays — in the card.
+  shell: {},
+  card: { flexGrow: 1, flexDirection: 'row', overflow: 'hidden', backgroundColor: C.card },
+  // Emoji centred on the title + time lines (the middle of a minimum-height card).
+  band: { width: BAND_W, alignItems: 'center', paddingTop: 17 },
+  bandEmoji: { fontSize: 19, lineHeight: 26 },
+  main: { flex: 1, paddingVertical: 10, paddingLeft: 12, paddingRight: 12 },
   cardMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   subStrip: { marginTop: 8, paddingLeft: 2 },
   subHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -561,8 +548,9 @@ const styles = StyleSheet.create({
     color: '#ff5a5f',
     letterSpacing: 0.4,
   },
-  grab: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   body: { flex: 1, minWidth: 0 },
+  titleRow: { flexDirection: 'row', alignItems: 'center' },
+  star: { marginRight: 5 },
   title: {
     fontSize: 15.5,
     fontWeight: '600',

@@ -20,6 +20,7 @@ import { PlaceSelectPopup } from './PlaceSelectPopup';
 import { TagSelectPopup } from './TagSelectPopup';
 import { BottomSheet, CenterPopup } from './Overlay';
 import { Appear, Tappable } from './anim';
+import { StarToggle } from './StarToggle';
 
 export type Sibling = { id: string; start: number; dur: number; title: string; color: string };
 
@@ -322,6 +323,8 @@ export function TaskEditorSheet({
                   />
                   {attempted && !canSave && <Text style={styles.errHint}>Give your task a name to continue</Text>}
                 </View>
+                {/* High priority: listed first (and first on the month widget). */}
+                <StarToggle on={!!d.starred} onToggle={() => patch({ starred: !d.starred || undefined })} />
               </View>
 
               {nameFocused && suggestions.length > 0 && (

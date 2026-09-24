@@ -5,8 +5,10 @@ import { fmtDur } from './utils';
 // A card's slot. `joinTop` / `joinBottom` mark the edges fused to an overlap
 // band (squared corners so the stack reads as one continuous shape).
 export type Pos = { top: number; h: number; joinTop?: boolean; joinBottom?: boolean };
-export type FreeBlock = { key: string; label: string; start: number; top: number; height: number };
-export type Chip = { key: string; label: string; top: number };
+// A gap between tasks. `end` is where it stops: the next task's start
+// (`bounded`) or the end of the day.
+export type FreeBlock = { key: string; label: string; start: number; end: number; bounded: boolean; top: number; height: number };
+export type Chip = { key: string; label: string; start: number; end: number; top: number };
 // The striped bridge fusing two time-overlapping cards. Its height grows gently
 // with the overlap, so ten minutes reads as small and an hour as substantial.
 export type OverlapBand = {
@@ -14,6 +16,7 @@ export type OverlapBand = {
   top: number;
   height: number;
   minutes: number; // how long the two tasks overlap
+  full: boolean; // the lower task lies entirely inside the time above it
   colorA: string; // upper card
   colorB: string; // lower card
   endMin: number; // latest end of the two (for past/greyed state)
@@ -95,7 +98,7 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
       const lead = s - dayStart;
       if (lead > gapThreshold) {
         top = Math.max(propTop, TOPBAND + 7 + minOffset(lead, gapThreshold));
-        freeblocks.push({ key: 'free-lead', label: `${fmtDur(lead)} free`, start: dayStart, top: TOPBAND + 7, height: top - TOPBAND - 14 });
+        freeblocks.push({ key: 'free-lead', label: `${fmtDur(lead)} free`, start: dayStart, end: s, bounded: true, top: TOPBAND + 7, height: top - TOPBAND - 14 });
       } else {
         top = Math.max(propTop, TOPBAND);
       }
@@ -109,6 +112,7 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
         top: cur.bottom,
         height: bh,
         minutes,
+        full: e <= cur.endMin,
         colorA: prev.color,
         colorB: t.color,
         endMin: Math.max(prev.start + prev.dur, e),
@@ -126,9 +130,9 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
       if (free > gapThreshold) {
         // Keyed by the task it follows, so a block survives layout changes
         // (e.g. lifting a card) and glides to its new size instead of popping.
-        freeblocks.push({ key: `free-after-${prev!.id}`, label: `${fmtDur(free)} free`, start: cur.endMin, top: cur.bottom + 7, height: top - cur.bottom - 14 });
+        freeblocks.push({ key: `free-after-${prev!.id}`, label: `${fmtDur(free)} free`, start: cur.endMin, end: s, bounded: true, top: cur.bottom + 7, height: top - cur.bottom - 14 });
       } else if (free > 0) {
-        chips.push({ key: `chip-${t.id}`, label: `${free} min`, top: cur.bottom + (top - cur.bottom) / 2 - 10 });
+        chips.push({ key: `chip-${t.id}`, label: `${free} min`, start: cur.endMin, end: s, top: cur.bottom + (top - cur.bottom) / 2 - 10 });
       }
       cur = { startMin: s, endMin: e, top, bottom: top + h };
     }
@@ -146,7 +150,7 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
   // Trailing free block from the last cluster to the end of the day.
   const last = clusters[clusters.length - 1];
   if (last && prev && dayEnd - last.endMin > gapThreshold && botTop - last.bottom - 14 >= MIN_FREE_H) {
-    freeblocks.push({ key: `free-after-${prev.id}`, label: `${fmtDur(dayEnd - last.endMin)} free`, start: last.endMin, top: last.bottom + 7, height: botTop - last.bottom - 14 });
+    freeblocks.push({ key: `free-after-${prev.id}`, label: `${fmtDur(dayEnd - last.endMin)} free`, start: last.endMin, end: dayEnd, bounded: false, top: last.bottom + 7, height: botTop - last.bottom - 14 });
   }
 
   // Minute → Y anchors, one pair per cluster (not per card: inside an overlap

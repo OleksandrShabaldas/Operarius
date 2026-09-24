@@ -1,0 +1,8 @@
+{
+  "name": "operarius-files",
+  "version": "1.0.0",
+  "description": "Operarius: saving a file where the user picks (the system Save as screen)",
+  "private": true,
+  "main": "index.ts",
+  "license": "MIT"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "operarius-calendar",
+  "version": "1.0.0",
+  "description": "Operarius calendar sync: the phone's calendars (Google accounts included) through Android's Calendar Provider",
+  "private": true,
+  "main": "index.ts",
+  "license": "MIT"
+}

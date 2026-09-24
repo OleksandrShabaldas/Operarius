@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CustomReminder, Place, ReminderIntensity, Reminders, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
+import { CalendarSync, CalLink, CalSeen, CustomReminder, Place, ReminderIntensity, Reminders, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
 import {
   DEFAULT_DAY_START,
   DEFAULT_DAY_END,
@@ -45,6 +45,20 @@ export const DEFAULT_PLACES: Place[] = [
 const toPresets = (vals: number[]): { value: number; tagId: string | null }[] =>
   vals.map((v) => ({ value: v, tagId: null }));
 
+export const DEFAULT_CALENDAR: CalendarSync = {
+  on: false,
+  calendarId: null,
+  calendarName: '',
+  account: '',
+  color: '#5B9DF9',
+  direction: 'both',
+  lastSync: null,
+  lastError: null,
+  seen: [],
+  ignored: [],
+  counts: { toCalendar: 0, fromCalendar: 0 },
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   dayStart: DEFAULT_DAY_START,
   dayEnd: DEFAULT_DAY_END,
@@ -67,7 +81,45 @@ export const DEFAULT_SETTINGS: Settings = {
   alarmSound: null,
   alarmVibrate: true,
   alarmGentle: true,
+  calendar: DEFAULT_CALENDAR,
+  lastBackup: null,
 };
+
+const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+
+function migrateCalendar(raw: any): CalendarSync {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_CALENDAR };
+  const n = (v: any) => (typeof v === 'number' && isFinite(v) ? v : 0);
+  return {
+    on: raw.on === true,
+    calendarId: typeof raw.calendarId === 'string' ? raw.calendarId : null,
+    calendarName: typeof raw.calendarName === 'string' ? raw.calendarName : '',
+    account: typeof raw.account === 'string' ? raw.account : '',
+    color: typeof raw.color === 'string' ? raw.color : DEFAULT_CALENDAR.color,
+    direction: raw.direction === 'toCalendar' || raw.direction === 'fromCalendar' ? raw.direction : 'both',
+    lastSync: typeof raw.lastSync === 'number' ? raw.lastSync : null,
+    lastError: typeof raw.lastError === 'string' ? raw.lastError : null,
+    seen: Array.isArray(raw.seen) ? raw.seen.filter((x: any): x is CalSeen => x && typeof x.t === 'string' && typeof x.k === 'string' && typeof x.i === 'string') : [],
+    ignored: strList(raw.ignored),
+    counts: { toCalendar: n(raw.counts?.toCalendar), fromCalendar: n(raw.counts?.fromCalendar) },
+  };
+}
+
+function migrateCalLink(raw: any): CalLink | undefined {
+  if (!raw || typeof raw !== 'object' || typeof raw.key !== 'string' || typeof raw.id !== 'string' || typeof raw.c !== 'string') return undefined;
+  return {
+    key: raw.key,
+    id: raw.id,
+    c: raw.c,
+    lh: typeof raw.lh === 'string' ? raw.lh : '',
+    rh: typeof raw.rh === 'string' ? raw.rh : '',
+    ...(raw.from ? { from: 1 as const } : {}),
+    ...(typeof raw.master === 'string' ? { master: raw.master } : {}),
+    ...(typeof raw.ob === 'number' ? { ob: raw.ob } : {}),
+    ...(raw.span ? { span: 1 as const } : {}),
+    ...(typeof raw.x === 'number' && raw.x > 0 ? { x: raw.x } : {}),
+  };
+}
 
 const INTENSITIES: ReminderIntensity[] = ['easy', 'medium', 'intense'];
 const isIntensity = (v: any): v is ReminderIntensity => INTENSITIES.includes(v);
@@ -153,6 +205,8 @@ function migrateTask(raw: any): Task {
     doneDates: Array.isArray(raw.doneDates) ? raw.doneDates.filter((d: any) => typeof d === 'string') : [],
     subDone: migrateSubDone(raw.subDone),
     expanded: !!raw.expanded,
+    starred: raw.starred === true || undefined,
+    cal: migrateCalLink(raw.cal),
     reminders: migrateReminders(raw.reminders),
   };
 }
@@ -202,13 +256,55 @@ export interface Repository {
   markSeeded(): Promise<void>;
 }
 
+/** Tasks from any stored / imported shape, normalised to the current one. */
+export function parseTasks(raw: unknown): Task[] {
+  return Array.isArray(raw) ? raw.filter((t) => t && typeof t === 'object' && t.id).map(migrateTask) : [];
+}
+
+/** Settings from any stored / imported shape, filled up with defaults. */
+export function parseSettings(raw: unknown): Settings {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_SETTINGS };
+  const parsed = raw as Partial<Settings>;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...parsed,
+    // Never let a stored blob leave these empty/broken.
+    tags: (Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS).map((t: Tag) => ({
+      ...t,
+      color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
+    })),
+    places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
+    timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
+    durationPresets: migratePresets(parsed.durationPresets, toPresets(DEFAULT_DURATION_PRESETS)),
+    colors: sameList(parsed.colors, LEGACY_COLORS) ? [...COLORS] : fitSlots(parsed.colors, COLORS, PALETTE_SLOTS),
+    emojis: fitSlots(parsed.emojis, EMOJIS, ICON_SLOTS),
+    swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
+    animations: typeof parsed.animations === 'boolean' ? parsed.animations : true,
+    animSpeed: migrateSpeed(parsed),
+    remindersOn: typeof parsed.remindersOn === 'boolean' ? parsed.remindersOn : true,
+    reminderDefault: {
+      before: offsetOrNull(parsed.reminderDefault?.before),
+      intensity: isIntensity(parsed.reminderDefault?.intensity) ? parsed.reminderDefault!.intensity : 'easy',
+    },
+    snoozeMin: typeof parsed.snoozeMin === 'number' && parsed.snoozeMin >= 1 && parsed.snoozeMin <= 60 ? Math.round(parsed.snoozeMin) : 10,
+    ringMin: typeof parsed.ringMin === 'number' && parsed.ringMin >= 0 && parsed.ringMin <= 60 ? Math.round(parsed.ringMin) : 0,
+    alarmSound:
+      parsed.alarmSound && typeof parsed.alarmSound.uri === 'string' && parsed.alarmSound.uri
+        ? { uri: parsed.alarmSound.uri, name: typeof parsed.alarmSound.name === 'string' ? parsed.alarmSound.name : 'Alarm' }
+        : null,
+    alarmVibrate: typeof parsed.alarmVibrate === 'boolean' ? parsed.alarmVibrate : true,
+    alarmGentle: typeof parsed.alarmGentle === 'boolean' ? parsed.alarmGentle : true,
+    calendar: migrateCalendar(parsed.calendar),
+    lastBackup:
+      parsed.lastBackup && typeof parsed.lastBackup.at === 'number' && typeof parsed.lastBackup.name === 'string' ? { at: parsed.lastBackup.at, name: parsed.lastBackup.name } : null,
+  };
+}
+
 export const localRepository: Repository = {
   async loadTasks() {
     try {
       const raw = await AsyncStorage.getItem(K_TASKS);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((t) => t && t.id).map(migrateTask) : [];
+      return raw ? parseTasks(JSON.parse(raw)) : [];
     } catch {
       return [];
     }
@@ -223,38 +319,7 @@ export const localRepository: Repository = {
   async loadSettings() {
     try {
       const raw = await AsyncStorage.getItem(K_SETTINGS);
-      if (!raw) return { ...DEFAULT_SETTINGS };
-      const parsed = JSON.parse(raw) as Partial<Settings>;
-      return {
-        ...DEFAULT_SETTINGS,
-        ...parsed,
-        // Never let a stored blob leave these empty/broken.
-        tags: (Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS).map((t: Tag) => ({
-          ...t,
-          color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
-        })),
-        places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
-        timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
-        durationPresets: migratePresets(parsed.durationPresets, toPresets(DEFAULT_DURATION_PRESETS)),
-        colors: sameList(parsed.colors, LEGACY_COLORS) ? [...COLORS] : fitSlots(parsed.colors, COLORS, PALETTE_SLOTS),
-        emojis: fitSlots(parsed.emojis, EMOJIS, ICON_SLOTS),
-        swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
-        animations: typeof parsed.animations === 'boolean' ? parsed.animations : true,
-        animSpeed: migrateSpeed(parsed),
-        remindersOn: typeof parsed.remindersOn === 'boolean' ? parsed.remindersOn : true,
-        reminderDefault: {
-          before: offsetOrNull(parsed.reminderDefault?.before),
-          intensity: isIntensity(parsed.reminderDefault?.intensity) ? parsed.reminderDefault!.intensity : 'easy',
-        },
-        snoozeMin: typeof parsed.snoozeMin === 'number' && parsed.snoozeMin >= 1 && parsed.snoozeMin <= 60 ? Math.round(parsed.snoozeMin) : 10,
-        ringMin: typeof parsed.ringMin === 'number' && parsed.ringMin >= 0 && parsed.ringMin <= 60 ? Math.round(parsed.ringMin) : 0,
-        alarmSound:
-          parsed.alarmSound && typeof parsed.alarmSound.uri === 'string' && parsed.alarmSound.uri
-            ? { uri: parsed.alarmSound.uri, name: typeof parsed.alarmSound.name === 'string' ? parsed.alarmSound.name : 'Alarm' }
-            : null,
-        alarmVibrate: typeof parsed.alarmVibrate === 'boolean' ? parsed.alarmVibrate : true,
-        alarmGentle: typeof parsed.alarmGentle === 'boolean' ? parsed.alarmGentle : true,
-      };
+      return raw ? parseSettings(JSON.parse(raw)) : { ...DEFAULT_SETTINGS };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }

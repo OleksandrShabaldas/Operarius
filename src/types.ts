@@ -48,7 +48,45 @@ export type Task = {
   doneDates: string[]; // per-occurrence completion for repeating tasks
   subDone?: Record<string, string[]>; // repeating tasks: subtask ids ticked off per occurrence (YYYY-MM-DD)
   expanded: boolean; // subtasks shown inline on the card (persisted)
+  starred?: boolean; // high priority: marked with a star and listed first (lists, month widget)
+  cal?: CalLink; // linked to an event in the synced calendar
   reminders: Reminders | null; // null = no reminders
+};
+
+// A task's link to an event in the synced calendar.
+export type CalLink = {
+  key: string; // stable identity: the event's id; one occurrence of a recurring event "<eventId>@<YYYY-MM-DD>"
+  id: string; // the event written to (an edited occurrence: its own exception event)
+  c: string; // the calendar it lives in
+  lh: string; // the task's calendar-facing fields at the last sync (hashed)
+  rh: string; // the event's at the last sync (hashed)
+  from?: 1; // came from the calendar (otherwise the task was sent there)
+  master?: string; // one occurrence of a recurring event: that event's id…
+  ob?: number; // …and the occurrence's original start (epoch ms)
+  span?: 1; // a multi-day all-day event (the task repeats daily through its last day)
+  x?: number; // minutes a timed event runs past midnight (the task stops at midnight)
+};
+
+// A linked task as of the last sync — so a task deleted here can be removed
+// from the calendar too (t: task, k: link key, i: event, m / o: occurrence).
+export type CalSeen = { t: string; k: string; i: string; m?: string; o?: number; f?: 1 };
+
+export type CalDirection = 'both' | 'toCalendar' | 'fromCalendar';
+
+// Syncing with a calendar on the phone (a Google account's calendars are
+// synced to Google by the phone).
+export type CalendarSync = {
+  on: boolean;
+  calendarId: string | null;
+  calendarName: string;
+  account: string;
+  color: string;
+  direction: CalDirection;
+  lastSync: number | null;
+  lastError: string | null;
+  seen: CalSeen[]; // every linked task as of the last sync (to notice deletions here)
+  ignored: string[]; // events (keys / ids) deleted here while syncing calendar → tasks only (never brought back)
+  counts: { toCalendar: number; fromCalendar: number };
 };
 
 // A task being composed/edited in the editor sheet. `id` is absent when new.
@@ -105,4 +143,6 @@ export type Settings = {
   alarmSound: { uri: string; name: string } | null; // null = the phone's default alarm sound
   alarmVibrate: boolean; // intense alarms vibrate in pulses
   alarmGentle: boolean; // intense alarms fade in instead of starting at full volume
+  calendar: CalendarSync;
+  lastBackup: { at: number; name: string } | null; // the last export
 };

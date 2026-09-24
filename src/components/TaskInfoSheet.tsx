@@ -13,7 +13,8 @@ import { INTENSITY } from './ReminderBits';
 import { PlaceIcon } from './PlaceIcon';
 import { BottomSheet, CenterPopup } from './Overlay';
 import { Appear, Tappable } from './anim';
-import { TaskCheck } from './TaskCheck';
+import { CheckBlock, TaskCheck } from './TaskCheck';
+import { StarToggle } from './StarToggle';
 
 export function TaskInfoSheet({
   task,
@@ -24,6 +25,7 @@ export function TaskInfoSheet({
   onCopy,
   onToggleDone,
   onToggleSubtask,
+  onToggleStar,
   onClose,
 }: {
   task: Task | null;
@@ -34,6 +36,7 @@ export function TaskInfoSheet({
   onCopy: () => void;
   onToggleDone: () => void;
   onToggleSubtask: (subId: string) => void;
+  onToggleStar: () => void;
   onClose: () => void;
 }) {
   const visible = !!task;
@@ -50,20 +53,22 @@ export function TaskInfoSheet({
   const doneCount = t ? t.subtasks.filter((s) => s.done).length : 0;
   const subLeft = t ? t.subtasks.length - doneCount : 0;
 
-  // Ticked with subtasks still open: say what's left and light up the open
-  // boxes for a moment (the done box itself shakes).
-  const [nudge, setNudge] = useState(0);
+  // The done box follows the subtasks. Ticked with some still open: say what's
+  // left and light up the open boxes for a moment; unticked with all done: say
+  // to untick one instead (the box itself shakes either way).
+  const [nudge, setNudge] = useState<{ n: number; why: CheckBlock }>({ n: 0, why: 'open' });
   const [hint, setHint] = useState(false);
   useEffect(() => {
-    if (!nudge) return;
+    if (!nudge.n) return;
     setHint(true);
     const h = setTimeout(() => setHint(false), 2400);
     return () => clearTimeout(h);
-  }, [nudge]);
+  }, [nudge.n]);
   useEffect(() => {
     if (!visible) setHint(false);
   }, [visible]);
-  const warn = hint && subLeft > 0;
+  const warn = hint && nudge.why === 'open' && subLeft > 0;
+  const locked = hint && nudge.why === 'locked' && subLeft === 0;
   const tickSub = (id: string, wasDone: boolean) => {
     if (!wasDone && subLeft === 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     else Haptics.selectionAsync().catch(() => {});
@@ -98,12 +103,25 @@ export function TaskInfoSheet({
                 <Text style={styles.typeTxt}>{typeLabel}</Text>
               </View>
             </View>
-            <TaskCheck color={t.color} done={t.done} subTotal={t.subtasks.length} subLeft={subLeft} size={34} radius={10} onToggle={onToggleDone} onBlocked={() => setNudge((n) => n + 1)} />
+            <StarToggle on={!!t.starred} onToggle={onToggleStar} size={18} />
+            <TaskCheck color={t.color} done={t.done} subTotal={t.subtasks.length} subLeft={subLeft} size={34} radius={10} onToggle={onToggleDone} onBlocked={(why) => setNudge((x) => ({ n: x.n + 1, why }))} />
           </View>
 
           {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
           {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} hint={dateHint(t.date)} />}
-          {!!t.repeat && <InfoRow icon="repeat" text={repeatSummary(t.repeat)} />}
+          {!!t.repeat && <InfoRow icon="repeat" text={t.cal?.span ? `Through ${dateLabel(t.repeat.endDate)}` : repeatSummary(t.repeat)} />}
+          {!!t.cal && settings.calendar.on && t.cal.c === settings.calendar.calendarId && (
+            <View style={styles.infoRow}>
+              <View style={[styles.calDot, { backgroundColor: settings.calendar.color, boxShadow: `0 0 0 3px ${hexA(settings.calendar.color, 0.2)}` }]} />
+              <Text style={styles.infoTxt} numberOfLines={1}>
+                {t.cal.from ? 'From' : 'In'} {settings.calendar.calendarName || 'your calendar'}
+                <Text style={styles.infoHint}>
+                  {'  ·  '}
+                  {settings.calendar.direction === 'both' ? 'synced both ways' : settings.calendar.direction === 'toCalendar' ? 'mirrored there' : 'follows the calendar'}
+                </Text>
+              </Text>
+            </View>
+          )}
 
           {(!!tag || !!placeTxt) && (
             <View style={styles.metaRow}>
@@ -166,10 +184,18 @@ export function TaskInfoSheet({
                   SUBTASKS · {doneCount}/{t.subtasks.length}
                 </Text>
                 {warn && (
-                  <Appear key={nudge} from="left" distance={10} style={styles.subHint}>
+                  <Appear key={nudge.n} from="left" distance={10} style={styles.subHint}>
                     <Feather name="lock" size={11} color={C.now} />
                     <Text style={styles.subHintTxt} numberOfLines={1}>
                       {subLeft === 1 ? 'Finish the last one to complete' : `Finish these ${subLeft} to complete`}
+                    </Text>
+                  </Appear>
+                )}
+                {locked && (
+                  <Appear key={nudge.n} from="left" distance={10} style={styles.subHint}>
+                    <Feather name="rotate-ccw" size={11} color={C.accentB} />
+                    <Text style={[styles.subHintTxt, { color: C.accentB }]} numberOfLines={1}>
+                      Untick a subtask to reopen
                     </Text>
                   </Appear>
                 )}
@@ -293,6 +319,7 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   infoTxt: { fontSize: 15, color: C.textDim, fontWeight: '500', fontVariant: ['tabular-nums'] },
   infoHint: { fontSize: 12.5, color: C.faint, fontWeight: '600' },
+  calDot: { width: 9, height: 9, borderRadius: 5, marginHorizontal: 3 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 6 },
   chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1 },
   chipTxt: { fontSize: 12, fontWeight: '600' },

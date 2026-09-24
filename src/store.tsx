@@ -1,9 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Draft, PlaceLocation, Settings, Task } from './types';
+import { CalendarSync, Draft, PlaceLocation, Settings, Task } from './types';
 import { DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
 import { COLORS } from './theme';
 import { expandForDay, parseId } from './recurrence';
 import { genId, todayKey } from './utils';
+import { applyOps, SyncOps } from './calendarSync';
+import { Backup, restorePhotos } from './backup';
+
+export type Snapshot = { tasks: Task[]; settings: Settings };
+export type ImportResult = { tasks: number; tags: number; places: number };
 
 type Ctx = {
   loaded: boolean;
@@ -16,8 +21,13 @@ type Ctx = {
   setDone: (id: string, done: boolean) => void; // e.g. "Done" pressed on a reminder
   toggleSubtask: (taskId: string, subId: string) => void;
   toggleExpanded: (id: string) => void; // show/hide subtasks inline on the card
+  toggleStar: (id: string) => void; // high priority on / off
   moveTask: (id: string, start: number) => void; // commit a drag
   updateSettings: (patch: Partial<Settings>) => void;
+  updateCalendar: (patch: Partial<CalendarSync>) => void; // Settings → Google Calendar
+  applyCalendarSync: (ops: SyncOps, patch: Partial<CalendarSync>) => void; // a sync's changes to the tasks + its state
+  importBackup: (b: Backup, mode: 'replace' | 'merge') => ImportResult; // restore a backup (replace everything / add what's missing)
+  restoreSnapshot: (s: Snapshot) => void; // undo a restore
   clearCompleted: (dateKey?: string) => void; // all days if omitted
   clearDay: (dateKey: string) => void;
   clearAll: () => void;
@@ -62,6 +72,8 @@ export function AppProvider({
   const didLoad = useRef(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
 
   // Initial load (+ first-run seed).
   useEffect(() => {
@@ -127,19 +139,21 @@ export function AppProvider({
   }, []);
 
   // Toggle completion — per-occurrence (doneDates) for a repeating instance.
-  // A task can't be ticked off while any of its subtasks are still open (the
-  // UI explains why; this is the guard).
+  // With subtasks, completion follows them: a task can't be ticked off while
+  // any are open, nor unticked while all are done (the UI explains why; this
+  // is the guard).
   const toggleDone = useCallback((id: string) => {
     const { baseId, date } = parseId(id);
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== baseId) return t;
+        const locked = t.subtasks.length > 0 && allSubsDone(t, t.repeat ? date : null);
         if (t.repeat && date) {
           const has = t.doneDates.includes(date);
-          if (!has && !allSubsDone(t, date)) return t;
+          if (has ? locked : !locked && t.subtasks.length > 0) return t;
           return { ...t, doneDates: has ? t.doneDates.filter((d) => d !== date) : [...t.doneDates, date] };
         }
-        if (!t.done && !allSubsDone(t, null)) return t;
+        if (t.done ? locked : !locked && t.subtasks.length > 0) return t;
         return { ...t, done: !t.done };
       })
     );
@@ -196,6 +210,11 @@ export function AppProvider({
     setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, expanded: !t.expanded } : t)));
   }, []);
 
+  const toggleStar = useCallback((id: string) => {
+    const { baseId } = parseId(id);
+    setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, starred: !t.starred || undefined } : t)));
+  }, []);
+
   const moveTask = useCallback((id: string, start: number) => {
     const { baseId } = parseId(id);
     setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, start } : t)));
@@ -203,6 +222,52 @@ export function AppProvider({
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const updateCalendar = useCallback((patch: Partial<CalendarSync>) => {
+    setSettings((prev) => ({ ...prev, calendar: { ...prev.calendar, ...patch } }));
+  }, []);
+
+  const applyCalendarSync = useCallback((ops: SyncOps, patch: Partial<CalendarSync>) => {
+    setTasks((prev) => applyOps(prev, ops));
+    if (Object.keys(patch).length) setSettings((prev) => ({ ...prev, calendar: { ...prev.calendar, ...patch } }));
+  }, []);
+
+  // Restoring a backup. What belongs to this phone stays: its alarm sound and
+  // its calendar sync (which re-matches the restored tasks to their events —
+  // and forgets the old ones' links, so nothing is deleted from the calendar).
+  const importBackup = useCallback((b: Backup, mode: 'replace' | 'merge'): ImportResult => {
+    if (mode === 'replace') {
+      const restored = restorePhotos(b);
+      setTasks(b.tasks);
+      setSettings((prev) => ({ ...restored, alarmSound: prev.alarmSound, calendar: { ...prev.calendar, seen: [] }, lastBackup: prev.lastBackup }));
+      return { tasks: b.tasks.length, tags: restored.tags.length, places: restored.places.length };
+    }
+    // Merge: add the tasks, tags and places that aren't here yet.
+    const cur = settingsRef.current;
+    const taskIds = new Set(tasksRef.current.map((t) => t.id));
+    const newTasks = b.tasks.filter((t) => !taskIds.has(t.id));
+    const tagIds = new Set(cur.tags.map((t) => t.id));
+    const newTags = b.settings.tags.filter((t) => !tagIds.has(t.id));
+    const allTags = new Set([...tagIds, ...newTags.map((t) => t.id)]);
+    const placeIds = new Set(cur.places.map((p) => p.id));
+    const addPlaces = new Set(b.settings.places.filter((p) => !placeIds.has(p.id)).map((p) => p.id));
+    const newPlaces = restorePhotos(b, addPlaces).places.filter((p) => addPlaces.has(p.id));
+    setTasks((prev) => {
+      const ids = new Set(prev.map((t) => t.id));
+      return [...prev, ...newTasks.filter((t) => !ids.has(t.id))];
+    });
+    setSettings((prev) => ({
+      ...prev,
+      tags: [...prev.tags, ...newTags.map((t) => (t.parentId && !allTags.has(t.parentId) ? { ...t, parentId: null } : t))],
+      places: [...prev.places, ...newPlaces],
+    }));
+    return { tasks: newTasks.length, tags: newTags.length, places: newPlaces.length };
+  }, []);
+
+  const restoreSnapshot = useCallback((s: Snapshot) => {
+    setTasks(s.tasks);
+    setSettings(s.settings);
   }, []);
 
   const clearCompleted = useCallback((dateKey?: string) => {
@@ -299,8 +364,13 @@ export function AppProvider({
     setDone,
     toggleSubtask,
     toggleExpanded,
+    toggleStar,
     moveTask,
     updateSettings,
+    updateCalendar,
+    applyCalendarSync,
+    importBackup,
+    restoreSnapshot,
     clearCompleted,
     clearDay,
     clearAll,

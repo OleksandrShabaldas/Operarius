@@ -17,22 +17,27 @@ import { ColorSwatch, CustomColorGrid, CustomIconInput, IconCell, IconGrid, Pale
 import { TimePickerPopup, DurationPickerPopup } from '../components/pickers';
 import { CenterPopup } from '../components/Overlay';
 import { ReminderSettings } from '../components/ReminderSettings';
+import { CalendarSettings } from '../components/CalendarSettings';
+import { DataSettings } from '../components/DataSettings';
+import { WidgetSettings } from '../components/WidgetSettings';
 import { Appear, Tappable } from '../components/anim';
 
 const Pressable = Tappable; // every tappable control gets press feedback
 
-type Category = 'general' | 'reminders' | 'appearance' | 'motion' | 'tags' | 'places' | 'presets' | 'data' | 'about';
+type Category = 'general' | 'reminders' | 'calendar' | 'widgets' | 'appearance' | 'motion' | 'tags' | 'places' | 'presets' | 'data' | 'about';
 type Prompt = { title: string; initial: string; submitLabel: string; onSubmit: (t: string) => void };
 
 const CATS: { id: Category; label: string; icon: keyof typeof Feather.glyphMap; sub: string }[] = [
   { id: 'general', label: 'General', icon: 'sliders', sub: 'Day window, week start, gaps' },
   { id: 'reminders', label: 'Reminders', icon: 'bell', sub: 'Defaults, alarm sound, reliability' },
+  { id: 'calendar', label: 'Google Calendar', icon: 'calendar', sub: 'Sync tasks with your calendar' },
+  { id: 'widgets', label: 'Widgets', icon: 'grid', sub: 'Today and the month on your home screen' },
   { id: 'appearance', label: 'Appearance', icon: 'droplet', sub: 'Time format, colors & icons' },
   { id: 'motion', label: 'Animations', icon: 'wind', sub: 'On / off and speed' },
   { id: 'tags', label: 'Tags', icon: 'tag', sub: 'Tags, sub-tags & week dots' },
   { id: 'places', label: 'Places', icon: 'map-pin', sub: 'Saved places' },
   { id: 'presets', label: 'Presets', icon: 'zap', sub: 'Quick time & duration picks' },
-  { id: 'data', label: 'Data', icon: 'database', sub: 'Clear tasks' },
+  { id: 'data', label: 'Data & backup', icon: 'database', sub: 'Export, import, clean up' },
   { id: 'about', label: 'About & updates', icon: 'info', sub: 'Version and updates' },
 ];
 
@@ -50,7 +55,7 @@ export function SettingsScreen({
   const insets = useSafeAreaInsets();
   const app = useApp();
   const {
-    settings, updateSettings, clearCompleted, clearAll,
+    settings, updateSettings,
     addTag, renameTag, setTagColor, setTagHideDots, setTagIcon, deleteTag,
     addPlace, renamePlace, setPlaceTag, setPlaceLocation, setPlacePhoto, deletePlace,
   } = app;
@@ -95,6 +100,17 @@ export function SettingsScreen({
 
   const title = cat ? CATS.find((c) => c.id === cat)!.label : 'Settings';
 
+  // A category's line in the list — live where it helps (what's synced with).
+  const catSub = (id: Category, sub: string) => {
+    const cal = settings.calendar;
+    if (id === 'calendar' && cal.on && cal.calendarName) return `On · ${cal.calendarName}`;
+    if (id === 'data' && settings.lastBackup) {
+      const days = Math.floor((Date.now() - settings.lastBackup.at) / 86400000);
+      return `Last backup ${days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}`;
+    }
+    return sub;
+  };
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.head}>
@@ -115,8 +131,11 @@ export function SettingsScreen({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.catLabel}>{c.label}</Text>
-                  <Text style={styles.catSub}>{c.sub}</Text>
+                  <Text style={styles.catSub} numberOfLines={1}>
+                    {catSub(c.id, c.sub)}
+                  </Text>
                 </View>
+                {c.id === 'calendar' && settings.calendar.on && <View style={[styles.catLive, { backgroundColor: settings.calendar.lastError ? '#f5a15c' : C.accentB }]} />}
                 <Feather name="chevron-right" size={20} color={C.muted} />
               </Pressable>
             ))}
@@ -161,6 +180,10 @@ export function SettingsScreen({
         )}
 
         {cat === 'reminders' && <ReminderSettings />}
+
+        {cat === 'calendar' && <CalendarSettings />}
+
+        {cat === 'widgets' && <WidgetSettings />}
 
         {cat === 'appearance' && (
           <View style={{ marginTop: 10 }}>
@@ -415,18 +438,7 @@ export function SettingsScreen({
           </View>
         )}
 
-        {cat === 'data' && (
-          <View style={{ marginTop: 10 }}>
-            <Pressable style={styles.rowBtn} onPress={() => confirm('Clear completed', 'Remove all completed tasks?', () => clearCompleted())}>
-              <Text style={styles.rowBtnTxt}>Clear completed tasks</Text>
-              <Feather name="chevron-right" size={20} color={C.muted} />
-            </Pressable>
-            <Pressable style={styles.rowBtn} onPress={() => confirm('Clear all', 'Delete every task? This cannot be undone.', clearAll)}>
-              <Text style={[styles.rowBtnTxt, { color: C.danger }]}>Delete all tasks</Text>
-              <Feather name="chevron-right" size={20} color={C.danger} />
-            </Pressable>
-          </View>
-        )}
+        {cat === 'data' && <DataSettings />}
 
         {cat === 'about' && (
           <View style={{ marginTop: 10 }}>
@@ -711,6 +723,7 @@ const styles = StyleSheet.create({
   catIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(79,209,197,0.12)', alignItems: 'center', justifyContent: 'center' },
   catLabel: { fontSize: 16, fontWeight: '700', color: C.text },
   catSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
+  catLive: { width: 7, height: 7, borderRadius: 4, marginRight: -4 },
   section: { fontSize: 11, color: C.muted, fontWeight: '700', marginBottom: 9, marginTop: 16, letterSpacing: 0.3 },
   hint: { fontSize: 12, color: C.muted, lineHeight: 17, marginTop: 10 },
   stepRow: { flexDirection: 'row', gap: 10 },

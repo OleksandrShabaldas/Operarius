@@ -1,0 +1,8 @@
+{
+  "name": "operarius-widgets",
+  "version": "1.0.0",
+  "description": "Operarius home-screen widgets: today's timeline and the month",
+  "private": true,
+  "main": "index.ts",
+  "license": "MIT"
+}

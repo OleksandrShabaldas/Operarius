@@ -1,0 +1,410 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/operarius_widget_bg"
+  android:orientation="vertical"
+  android:padding="12dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingLeft="4dp">
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Thursday"
+        android:textColor="#F4F4F6"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="September 24"
+        android:textColor="#8A8A92"
+        android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginRight="10dp"
+      android:text="1 of 3"
+      android:textColor="#C8C8CE"
+      android:textSize="12sp"
+      android:textStyle="bold" />
+
+    <ImageView
+      android:layout_width="36dp"
+      android:layout_height="36dp"
+      android:background="@drawable/operarius_widget_plus_bg"
+      android:padding="9dp"
+      android:src="@drawable/operarius_widget_ic_plus" />
+  </LinearLayout>
+
+<LinearLayout 
+  android:tag="r_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="2dp"
+  android:layout_marginBottom="2dp"
+  android:gravity="center_vertical"
+  android:minHeight="44dp"
+  android:orientation="horizontal"
+  android:paddingTop="5dp"
+  android:paddingRight="6dp"
+  android:paddingBottom="5dp">
+
+  <LinearLayout
+    android:layout_width="46dp"
+    android:layout_height="wrap_content"
+    android:gravity="end"
+    android:orientation="vertical">
+
+    <TextView
+      android:tag="r_start"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="09:00"
+      android:textColor="#C8C8CE"
+      android:textSize="12.5sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:tag="r_end"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="09:30"
+      android:textColor="#6E6E76"
+      android:textSize="10.5sp" />
+  </LinearLayout>
+
+  <ImageView
+    android:tag="r_band"
+    android:layout_width="4dp"
+    android:layout_height="34dp"
+    android:layout_marginLeft="9dp"
+    android:layout_marginRight="9dp"
+    android:scaleType="fitXY"
+    android:src="@drawable/operarius_widget_band"
+    android:tint="#5B9DF9" />
+
+  <TextView
+    android:tag="r_emoji"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginRight="8dp"
+    android:includeFontPadding="false"
+    android:text="👥"
+    android:textSize="17sp" />
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:orientation="vertical">
+
+    <TextView
+      android:tag="r_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="Team standup"
+      android:textColor="#F4F4F6"
+      android:textSize="14sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:tag="r_sub"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="3dp"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="30 min · Work"
+      android:textColor="#8A8A92"
+      android:textSize="11sp" />
+  </LinearLayout>
+
+  <TextView
+    android:tag="r_badge"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginLeft="6dp"
+    android:background="@drawable/operarius_widget_badge"
+    android:includeFontPadding="false"
+    android:paddingLeft="6dp"
+    android:paddingTop="3dp"
+    android:paddingRight="6dp"
+    android:paddingBottom="3dp"
+    android:text="NOW"
+    android:textColor="#FF5A5F"
+    android:textSize="9sp"
+    android:textStyle="bold"
+    android:visibility="gone" />
+
+  <ImageView
+    android:tag="r_check"
+    android:layout_width="20dp"
+    android:layout_height="20dp"
+    android:layout_marginLeft="8dp"
+    android:src="@drawable/operarius_widget_ic_ring"
+    android:tint="#5B5B63" />
+</LinearLayout>
+
+<LinearLayout 
+  android:tag="r_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="2dp"
+  android:layout_marginBottom="2dp"
+  android:gravity="center_vertical"
+  android:minHeight="44dp"
+  android:background="@drawable/operarius_widget_row_now"
+  android:orientation="horizontal"
+  android:paddingTop="5dp"
+  android:paddingRight="6dp"
+  android:paddingBottom="5dp">
+
+  <LinearLayout
+    android:layout_width="46dp"
+    android:layout_height="wrap_content"
+    android:gravity="end"
+    android:orientation="vertical">
+
+    <TextView
+      android:tag="r_start"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="10:00"
+      android:textColor="#C8C8CE"
+      android:textSize="12.5sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:tag="r_end"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="12:00"
+      android:textColor="#6E6E76"
+      android:textSize="10.5sp" />
+  </LinearLayout>
+
+  <ImageView
+    android:tag="r_band"
+    android:layout_width="4dp"
+    android:layout_height="34dp"
+    android:layout_marginLeft="9dp"
+    android:layout_marginRight="9dp"
+    android:scaleType="fitXY"
+    android:src="@drawable/operarius_widget_band"
+    android:tint="#7C7CF0" />
+
+  <TextView
+    android:tag="r_emoji"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginRight="8dp"
+    android:includeFontPadding="false"
+    android:text="💻"
+    android:textSize="17sp" />
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:orientation="vertical">
+
+    <TextView
+      android:tag="r_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="Deep work: proposal"
+      android:textColor="#F4F4F6"
+      android:textSize="14sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:tag="r_sub"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="3dp"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="2 hr · Focus"
+      android:textColor="#8A8A92"
+      android:textSize="11sp" />
+  </LinearLayout>
+
+  <TextView
+    android:tag="r_badge"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginLeft="6dp"
+    android:background="@drawable/operarius_widget_badge"
+    android:includeFontPadding="false"
+    android:paddingLeft="6dp"
+    android:paddingTop="3dp"
+    android:paddingRight="6dp"
+    android:paddingBottom="3dp"
+    android:text="NOW"
+    android:textColor="#FF5A5F"
+    android:textSize="9sp"
+    android:textStyle="bold"
+    android:visibility="visible" />
+
+  <ImageView
+    android:tag="r_check"
+    android:layout_width="20dp"
+    android:layout_height="20dp"
+    android:layout_marginLeft="8dp"
+    android:src="@drawable/operarius_widget_ic_ring"
+    android:tint="#5B5B63" />
+</LinearLayout>
+
+<LinearLayout 
+  android:tag="r_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="2dp"
+  android:layout_marginBottom="2dp"
+  android:gravity="center_vertical"
+  android:minHeight="44dp"
+  android:orientation="horizontal"
+  android:paddingTop="5dp"
+  android:paddingRight="6dp"
+  android:paddingBottom="5dp">
+
+  <LinearLayout
+    android:layout_width="46dp"
+    android:layout_height="wrap_content"
+    android:gravity="end"
+    android:orientation="vertical">
+
+    <TextView
+      android:tag="r_start"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="13:00"
+      android:textColor="#C8C8CE"
+      android:textSize="12.5sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:tag="r_end"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="13:45"
+      android:textColor="#6E6E76"
+      android:textSize="10.5sp" />
+  </LinearLayout>
+
+  <ImageView
+    android:tag="r_band"
+    android:layout_width="4dp"
+    android:layout_height="34dp"
+    android:layout_marginLeft="9dp"
+    android:layout_marginRight="9dp"
+    android:scaleType="fitXY"
+    android:src="@drawable/operarius_widget_band"
+    android:tint="#5FD08A" />
+
+  <TextView
+    android:tag="r_emoji"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginRight="8dp"
+    android:includeFontPadding="false"
+    android:text="🥗"
+    android:textSize="17sp" />
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:orientation="vertical">
+
+    <TextView
+      android:tag="r_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="Lunch with Ann"
+      android:textColor="#F4F4F6"
+      android:textSize="14sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:tag="r_sub"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="3dp"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:text="45 min · Personal"
+      android:textColor="#8A8A92"
+      android:textSize="11sp" />
+  </LinearLayout>
+
+  <TextView
+    android:tag="r_badge"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginLeft="6dp"
+    android:background="@drawable/operarius_widget_badge"
+    android:includeFontPadding="false"
+    android:paddingLeft="6dp"
+    android:paddingTop="3dp"
+    android:paddingRight="6dp"
+    android:paddingBottom="3dp"
+    android:text="NOW"
+    android:textColor="#FF5A5F"
+    android:textSize="9sp"
+    android:textStyle="bold"
+    android:visibility="gone" />
+
+  <ImageView
+    android:tag="r_check"
+    android:layout_width="20dp"
+    android:layout_height="20dp"
+    android:layout_marginLeft="8dp"
+    android:src="@drawable/operarius_widget_ic_ring"
+    android:tint="#5B5B63" />
+</LinearLayout>
+
+</LinearLayout>

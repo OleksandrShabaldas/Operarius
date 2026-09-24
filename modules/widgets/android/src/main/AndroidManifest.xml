@@ -1,0 +1,37 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Today's timeline -->
+    <receiver
+      android:name="com.operarius.widgets.TodayWidget"
+      android:exported="true"
+      android:label="@string/operarius_widget_today_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        <action android:name="android.intent.action.TIME_SET" />
+        <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/operarius_widget_today_info" />
+    </receiver>
+
+    <!-- The month -->
+    <receiver
+      android:name="com.operarius.widgets.MonthWidget"
+      android:exported="true"
+      android:label="@string/operarius_widget_month_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/operarius_widget_month_info" />
+    </receiver>
+
+    <!-- Rows of the timeline list -->
+    <service
+      android:name="com.operarius.widgets.TodayWidgetService"
+      android:exported="false"
+      android:permission="android.permission.BIND_REMOTEVIEWS" />
+  </application>
+</manifest>

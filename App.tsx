@@ -15,6 +15,8 @@ import { Draft, TaskType } from './src/types';
 import { occurrence, parseId } from './src/recurrence';
 import { todayKey } from './src/utils';
 import { carryReminders, defaultReminders, useReminderSync } from './src/reminders';
+import { useCalendarSync } from './src/calendarSync';
+import { useWidgetSync } from './src/widgets';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TodoScreen } from './src/screens/TodoScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
@@ -24,6 +26,8 @@ import { TaskEditorSheet } from './src/components/TaskEditorSheet';
 import { TaskInfoSheet } from './src/components/TaskInfoSheet';
 import { UpdateModal } from './src/components/UpdateModal';
 import { checkForUpdate, currentVersion, ReleaseInfo } from './src/updater';
+
+const DAY_MIN = 24 * 60;
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -48,7 +52,7 @@ function BackgroundGlow() {
 
 function Root() {
   const app = useApp();
-  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, toggleDone, setDone, toggleSubtask } = app;
+  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, toggleDone, setDone, toggleSubtask, toggleStar, applyCalendarSync } = app;
 
   const [tab, setTab] = useState<Tab>('today');
   const [overlay, setOverlay] = useState<'stats' | 'settings' | null>(null);
@@ -61,6 +65,7 @@ function Root() {
 
   const [update, setUpdate] = useState<ReleaseInfo | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateWaiting, setUpdateWaiting] = useState(false); // found on its own: shown once nothing else is open
   const [checking, setChecking] = useState(false);
   const curVer = currentVersion();
 
@@ -75,9 +80,11 @@ function Root() {
     const r = await checkForUpdate();
     setChecking(false);
     if (r.available && r.release) {
-      setOverlay(null);
       setUpdate(r.release);
-      setUpdateOpen(true);
+      if (manual) {
+        setOverlay(null);
+        setUpdateOpen(true);
+      } else setUpdateWaiting(true);
     } else if (manual) {
       if (r.release) Alert.alert('Up to date', `You're on the latest version (v${r.current}).`);
       else Alert.alert('Check for updates', "Couldn't reach GitHub. Check your connection and try again.");
@@ -88,22 +95,52 @@ function Root() {
     if (loaded) SplashScreen.hideAsync().catch(() => {});
   }, [loaded]);
 
+  // An update found in the background waits until no task, editor or pushed
+  // screen is open (e.g. the app was opened on a task from a reminder or a
+  // widget), then comes up a moment later.
+  useEffect(() => {
+    if (!updateWaiting || viewId || draft || overlay) return;
+    const t = setTimeout(() => {
+      setUpdateWaiting(false);
+      setUpdateOpen(true);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [updateWaiting, viewId, draft, overlay]);
+
   // Reminders: keep the phone's alarms matching the tasks, and apply "Done"
   // pressed on a notification / the reminder screen while the app was closed.
   useReminderSync({ loaded, tasks, settings, onDone: (key) => setDone(key, true) });
 
-  // Tapping a reminder (or "Open task" on its screen) opens the app on that
-  // task: operarius://task?key=<task>&date=<day>.
-  const linkRef = useRef({ tasks });
-  linkRef.current = { tasks };
+  // Google Calendar: keep tasks and the chosen calendar in step (Settings → Google Calendar).
+  useCalendarSync({ loaded, tasks, settings, apply: applyCalendarSync });
+
+  // Home-screen widgets: today's timeline and the month.
+  useWidgetSync({ loaded, tasks, settings });
+
+  // Links into the app — from a reminder, "Open task" on its screen, or a
+  // widget: operarius://task?key=<task>&date=<day> opens a task,
+  // operarius://day?date=<day> a day, operarius://new?date=<day> a new task.
+  const linkRef = useRef({ tasks, openNew: (_?: { startMin?: number; dur?: number; type?: TaskType }) => {} });
+  linkRef.current.tasks = tasks;
   const openFromLink = useCallback((url: string | null) => {
-    if (!url || !url.startsWith('operarius://task')) return;
+    if (!url || !url.startsWith('operarius://')) return;
     const q = url.split('?')[1] ?? '';
     const params: Record<string, string> = {};
     q.split('&').forEach((kv) => {
       const [k, v] = kv.split('=');
       if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? '');
     });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? '') ? params.date : todayKey();
+    if (url.startsWith('operarius://day') || url.startsWith('operarius://new')) {
+      setOverlay(null);
+      setViewId(null);
+      setTab('today');
+      setSelectedKey(date);
+      // A new task: once the day is there, open the editor on it.
+      if (url.startsWith('operarius://new')) setTimeout(() => linkRef.current.openNew(), ms(360) + 60);
+      return;
+    }
+    if (!url.startsWith('operarius://task')) return;
     const key = params.key;
     if (!key) return;
     const base = linkRef.current.tasks.find((t) => t.id === parseId(key).baseId);
@@ -155,25 +192,29 @@ function Root() {
   }, [loaded, runUpdateCheck]);
 
   const openNew = useCallback(
-    (opts?: { startMin?: number; type?: TaskType }) => {
+    (opts?: { startMin?: number; dur?: number; type?: TaskType }) => {
       setAutoDate(false);
       const type: TaskType = opts?.type ?? (tab === 'todo' ? 'todo' : 'planned');
-      // A tapped free slot sets the time, and the To-do tab / All-day button the
-      // type, on purpose — a name suggestion must not override those.
+      // A tapped free gap sets the time (and length), and the To-do tab /
+      // All-day button the type, on purpose — a name suggestion must not
+      // override those.
       const set: (keyof Draft)[] = [];
       if (opts?.startMin != null) set.push('start');
+      if (opts?.dur != null) set.push('dur');
       if (opts?.type || tab === 'todo') set.push('type');
       setDraftTouched(set);
-      const dayPlanned = tasksForDay(selectedKey).filter((t) => t.type === 'planned');
-      const after = dayPlanned.reduce((m, t) => Math.max(m, t.start + t.dur), settings.dayStart);
-      const start = Math.min(opts?.startMin ?? after, settings.dayEnd - 30);
+      // "+" starts the task now (to the nearest 5 minutes, the pickers' step).
+      const d = new Date();
+      const now = Math.round((d.getHours() * 60 + d.getMinutes()) / 5) * 5;
+      const start = Math.max(0, Math.min(opts?.startMin ?? now, DAY_MIN - 5));
+      const dur = Math.max(5, Math.min(opts?.dur ?? 30, DAY_MIN - start));
       setDraft({
         title: '',
         emoji: '📝',
         color: '#5B9DF9',
         type,
         start,
-        dur: 30,
+        dur,
         done: false,
         tagId: null,
         placeId: null,
@@ -186,7 +227,7 @@ function Root() {
         reminders: defaultReminders(settings), // Settings → Reminders → New tasks
       });
     },
-    [tab, selectedKey, settings, tasksForDay]
+    [tab, selectedKey, settings]
   );
 
   // Close the info sheet first, then open the editor a beat later, so the two
@@ -216,6 +257,8 @@ function Root() {
       setTimeout(() => setDraft({ ...rest, done: false, doneDates: [], expanded: false, reminders, subtasks: base.subtasks.map((s) => ({ ...s, done: false })) }), ms(230) + 30);
     }
   }, [viewId, tasks]);
+
+  linkRef.current.openNew = openNew;
 
   const patch = useCallback((p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d)), []);
   const save = useCallback(() => {
@@ -308,6 +351,7 @@ function Root() {
         onCopy={copyFromInfo}
         onToggleDone={() => viewTask && toggleDone(viewTask.id)}
         onToggleSubtask={(subId) => viewTask && toggleSubtask(viewTask.id, subId)}
+        onToggleStar={() => viewTask && toggleStar(viewTask.id)}
         onClose={() => setViewId(null)}
       />
 

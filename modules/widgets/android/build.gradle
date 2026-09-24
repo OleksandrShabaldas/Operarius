@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.operarius.widgets'
+version = '1.0.0'
+
+android {
+  namespace "com.operarius.widgets"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  lint {
+    abortOnError false
+    checkReleaseBuilds false
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.17.0"
+}

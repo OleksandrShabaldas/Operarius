@@ -23,6 +23,8 @@ data class Reminder(
   /** Scheduled here rather than by the app (a snooze or a test) — app syncs leave it alone. */
   val native: Boolean = false,
   val snoozes: Int = 0,
+  /** Subtasks still open: while any are, "Done" becomes "Open" (a task completes with its subtasks). */
+  val subsLeft: Int = 0,
 ) {
   /** Medium and intense reminders take over the screen. */
   val isScreen: Boolean get() = intensity == MEDIUM || intensity == INTENSE
@@ -46,6 +48,7 @@ data class Reminder(
     .put("detail", detail)
     .put("native", native)
     .put("snoozes", snoozes)
+    .put("subsLeft", subsLeft)
 
   override fun toString(): String = toJson().toString()
 
@@ -72,6 +75,7 @@ data class Reminder(
       detail = o.optString("detail"),
       native = o.optBoolean("native"),
       snoozes = o.optInt("snoozes"),
+      subsLeft = o.optInt("subsLeft"),
     )
 
     fun parse(s: String?): Reminder? = try {
@@ -144,6 +148,7 @@ class ReminderRecord : Record {
   @Field val endAt: Double = 0.0
   @Field val timeText: String = ""
   @Field val detail: String = ""
+  @Field val subsLeft: Double = 0.0
 
   fun toReminder() = Reminder(
     id = id,
@@ -160,6 +165,7 @@ class ReminderRecord : Record {
     endAt = endAt.toLong(),
     timeText = timeText,
     detail = detail,
+    subsLeft = subsLeft.toInt().coerceAtLeast(0),
   )
 }
 

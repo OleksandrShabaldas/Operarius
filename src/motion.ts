@@ -3,27 +3,37 @@ import { makeMutable } from 'react-native-reanimated';
 // ---------------------------------------------------------------------------
 // App-wide motion settings (Settings → Animations).
 //
-// `scale` works like Android's "animation duration scale": every duration and
-// delay is multiplied by it (0.5× = twice as fast, 4× = four times slower) and
-// springs are re-tuned to run at the same rate with the same bounce. Turning
-// animations off is handled globally by <ReducedMotionConfig> in App, which
-// makes every Reanimated animation (incl. layout animations) finish instantly.
+// The user picks a *speed* (0.5× = half speed … 4× = four times faster). Inside,
+// that becomes `scale`, the duration factor (1 / speed): every duration and
+// delay is multiplied by it and springs are re-tuned to run at the same rate
+// with the same bounce. Turning animations off is handled globally by
+// <ReducedMotionConfig> in App, which makes every Reanimated animation (incl.
+// layout animations) finish instantly.
 //
 // Animations are built on the JS thread from `motion`; the few that start
 // inside worklets (gesture callbacks) read the UI-thread copy `MOTION_SCALE`.
 // ---------------------------------------------------------------------------
 
-export const MIN_SCALE = 0.5;
-export const MAX_SCALE = 4;
+export const MIN_SPEED = 0.5;
+export const MAX_SPEED = 4;
+/** The speeds the slider offers (evenly spaced on it). */
+export const SPEED_STOPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+
+/** The stop nearest to `v` (used when migrating older duration-based values). */
+export function nearestSpeed(v: number): number {
+  let best = SPEED_STOPS[0];
+  for (const s of SPEED_STOPS) if (Math.abs(s - v) < Math.abs(best - v)) best = s;
+  return best;
+}
 
 export const motion = { enabled: true, scale: 1 };
 export const MOTION_SCALE = makeMutable(1);
 
-export function setMotion(enabled: boolean, scale: number) {
-  const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale || 1));
+export function setMotion(enabled: boolean, speed: number) {
+  const v = Math.min(MAX_SPEED, Math.max(MIN_SPEED, speed || 1));
   motion.enabled = enabled;
-  motion.scale = s;
-  MOTION_SCALE.value = s;
+  motion.scale = 1 / v;
+  MOTION_SCALE.value = 1 / v;
 }
 
 /** A duration / delay in ms, scaled. 0 when animations are off. */

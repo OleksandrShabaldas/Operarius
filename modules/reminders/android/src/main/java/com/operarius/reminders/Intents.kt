@@ -23,6 +23,15 @@ internal object Intents {
   fun openAppPending(ctx: Context, r: Reminder): PendingIntent =
     PendingIntent.getActivity(ctx, code(r, "open"), openApp(ctx, r), IMMUTABLE)
 
+  /** "Open" on a notification: quiet the reminder, then open the task. */
+  fun openAndDismiss(ctx: Context, r: Reminder): PendingIntent =
+    PendingIntent.getActivity(
+      ctx,
+      code(r, "open-dismiss"),
+      Intent(ctx, OpenTaskActivity::class.java).putExtra(ReminderReceiver.EXTRA_REMINDER, r.toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+      IMMUTABLE
+    )
+
   /** The app itself (no task) — used when nothing more specific applies. */
   fun launchApp(ctx: Context): Intent? =
     ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

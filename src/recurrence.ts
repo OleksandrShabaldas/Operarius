@@ -57,17 +57,29 @@ export function parseId(id: string): { baseId: string; date: string | null } {
   return i < 0 ? { baseId: id, date: null } : { baseId: id.slice(0, i), date: id.slice(i + 1) };
 }
 
+// One occurrence of a repeating task as a task of its own: its day, its done
+// state, and its subtasks ticked off for that day only.
+export function occurrence(t: Task, dateKey: string): Task {
+  const ticked = t.subDone?.[dateKey];
+  return {
+    ...t,
+    id: instanceId(t.id, dateKey),
+    date: dateKey,
+    done: t.doneDates.includes(dateKey),
+    subtasks: t.subtasks.map((s) => ({ ...s, done: !!ticked?.includes(s.id) })),
+  };
+}
+
 // All task instances occurring on a given day (single tasks and expanded repeats).
 export function expandForDay(tasks: Task[], dateKey: string): Task[] {
   const out: Task[] = [];
   for (const t of tasks) {
     if (t.type === 'todo') continue;
     if (!occursOn(t, dateKey)) continue;
-    if (t.repeat) {
-      out.push({ ...t, id: instanceId(t.id, dateKey), date: dateKey, done: t.doneDates.includes(dateKey) });
-    } else {
-      out.push(t);
-    }
+    out.push(t.repeat ? occurrence(t, dateKey) : t);
   }
   return out;
 }
+
+/** Subtasks still open — a task can't be completed while any are. */
+export const openSubtasks = (t: Pick<Task, 'subtasks'>) => t.subtasks.filter((s) => !s.done).length;

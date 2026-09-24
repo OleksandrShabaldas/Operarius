@@ -1,17 +1,19 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { fmtCoords, hasLocation, mapsUrlFor } from '../maps';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Clock, Place, Tag, Task } from '../types';
-import { fmt, fmtDur, hexA, dateKey, dateLabel, findTag, placeLabel, repeatSummary, tagLabel } from '../utils';
+import { fmt, fmtDur, hexA, dateHint, dateKey, dateLabel, findTag, placeLabel, repeatSummary, tagLabel } from '../utils';
 import { useApp } from '../store';
 import { reminderLines, whenLabel } from '../reminders';
 import { INTENSITY } from './ReminderBits';
 import { PlaceIcon } from './PlaceIcon';
 import { BottomSheet, CenterPopup } from './Overlay';
 import { Appear, Tappable } from './anim';
+import { TaskCheck } from './TaskCheck';
 
 export function TaskInfoSheet({
   task,
@@ -46,6 +48,27 @@ export function TaskInfoSheet({
   const placeTxt = t ? placeLabel(places, t.placeId) : '';
   const typeLabel = t?.type === 'allday' ? 'All-day' : t?.type === 'todo' ? 'To-do' : 'Planned';
   const doneCount = t ? t.subtasks.filter((s) => s.done).length : 0;
+  const subLeft = t ? t.subtasks.length - doneCount : 0;
+
+  // Ticked with subtasks still open: say what's left and light up the open
+  // boxes for a moment (the done box itself shakes).
+  const [nudge, setNudge] = useState(0);
+  const [hint, setHint] = useState(false);
+  useEffect(() => {
+    if (!nudge) return;
+    setHint(true);
+    const h = setTimeout(() => setHint(false), 2400);
+    return () => clearTimeout(h);
+  }, [nudge]);
+  useEffect(() => {
+    if (!visible) setHint(false);
+  }, [visible]);
+  const warn = hint && subLeft > 0;
+  const tickSub = (id: string, wasDone: boolean) => {
+    if (!wasDone && subLeft === 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    else Haptics.selectionAsync().catch(() => {});
+    onToggleSubtask(id);
+  };
 
   const placeTag = place?.tagId ? findTag(tags, place.tagId) : null;
 
@@ -75,16 +98,11 @@ export function TaskInfoSheet({
                 <Text style={styles.typeTxt}>{typeLabel}</Text>
               </View>
             </View>
-            <Tappable
-              onPress={onToggleDone}
-              scaleTo={0.86}
-              style={[styles.doneBox, { boxShadow: `inset 0 0 0 2px ${t.done ? t.color : hexA(t.color, 0.5)}`, backgroundColor: t.done ? t.color : 'transparent' }]}>
-              {t.done && <Feather name="check" size={18} color="#0b0b0d" />}
-            </Tappable>
+            <TaskCheck color={t.color} done={t.done} subTotal={t.subtasks.length} subLeft={subLeft} size={34} radius={10} onToggle={onToggleDone} onBlocked={() => setNudge((n) => n + 1)} />
           </View>
 
           {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
-          {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} />}
+          {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} hint={dateHint(t.date)} />}
           {!!t.repeat && <InfoRow icon="repeat" text={repeatSummary(t.repeat)} />}
 
           {(!!tag || !!placeTxt) && (
@@ -143,10 +161,28 @@ export function TaskInfoSheet({
 
           {t.subtasks.length > 0 && (
             <>
-              <Text style={styles.section}>SUBTASKS · {doneCount}/{t.subtasks.length}</Text>
+              <View style={styles.subHead}>
+                <Text style={[styles.section, styles.subHeadTxt]}>
+                  SUBTASKS · {doneCount}/{t.subtasks.length}
+                </Text>
+                {warn && (
+                  <Appear key={nudge} from="left" distance={10} style={styles.subHint}>
+                    <Feather name="lock" size={11} color={C.now} />
+                    <Text style={styles.subHintTxt} numberOfLines={1}>
+                      {subLeft === 1 ? 'Finish the last one to complete' : `Finish these ${subLeft} to complete`}
+                    </Text>
+                  </Appear>
+                )}
+              </View>
               {t.subtasks.map((s) => (
-                <Tappable key={s.id} style={styles.subRow} onPress={() => onToggleSubtask(s.id)}>
-                  <View style={[styles.subCheck, s.done && { backgroundColor: t.color }]}>{s.done && <Feather name="check" size={13} color="#0b0b0d" />}</View>
+                <Tappable key={s.id} style={styles.subRow} onPress={() => tickSub(s.id, s.done)}>
+                  <View style={[styles.subCheck, s.done && { backgroundColor: t.color }, warn && !s.done && styles.subCheckWarn]}>
+                    {s.done && (
+                      <Appear from="pop">
+                        <Feather name="check" size={13} color="#0b0b0d" />
+                      </Appear>
+                    )}
+                  </View>
                   <Text style={[styles.subTxt, s.done && styles.subDone]}>{s.title || 'Untitled'}</Text>
                 </Tappable>
               ))}
@@ -234,18 +270,20 @@ export function TaskInfoSheet({
   );
 }
 
-function InfoRow({ icon, text }: { icon: keyof typeof Feather.glyphMap; text: string }) {
+function InfoRow({ icon, text, hint }: { icon: keyof typeof Feather.glyphMap; text: string; hint?: string | null }) {
   return (
     <View style={styles.infoRow}>
       <Feather name={icon} size={15} color={C.muted} />
-      <Text style={styles.infoTxt}>{text}</Text>
+      <Text style={styles.infoTxt}>
+        {text}
+        {!!hint && <Text style={styles.infoHint}>{'  ·  '}{hint}</Text>}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
-  doneBox: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   icon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 26 },
   title: { fontSize: 21, fontWeight: '700', color: C.text },
@@ -254,6 +292,7 @@ const styles = StyleSheet.create({
   typeTxt: { fontSize: 11, fontWeight: '700', color: C.muted, letterSpacing: 0.3 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   infoTxt: { fontSize: 15, color: C.textDim, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  infoHint: { fontSize: 12.5, color: C.faint, fontWeight: '600' },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 6 },
   chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1 },
   chipTxt: { fontSize: 12, fontWeight: '600' },
@@ -288,8 +327,13 @@ const styles = StyleSheet.create({
   remLabel: { flex: 1, fontSize: 14.5, color: C.text, fontWeight: '500' },
   remTime: { fontSize: 14, color: C.textDim, fontWeight: '700', fontVariant: ['tabular-nums'], paddingRight: 1 },
   remPast: { color: C.faint, textDecorationLine: 'line-through' },
+  subHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, marginBottom: 10 },
+  subHeadTxt: { marginTop: 0, marginBottom: 0 },
+  subHint: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
+  subHintTxt: { fontSize: 11.5, fontWeight: '700', color: C.now, flexShrink: 1 },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 9 },
   subCheck: { width: 22, height: 22, borderRadius: 7, boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  subCheckWarn: { boxShadow: `inset 0 0 0 2px ${hexA(C.now, 0.85)}` },
   subTxt: { fontSize: 15, color: C.text, flex: 1 },
   subDone: { color: C.faint, textDecorationLine: 'line-through' },
   notes: { fontSize: 15, color: C.textDim, lineHeight: 21 },

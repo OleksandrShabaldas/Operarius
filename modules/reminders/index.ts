@@ -28,6 +28,7 @@ export type NativeReminder = {
   endAt: number;
   timeText: string; // "11:30 – 12:00", "All day", "To-do"
   detail: string; // "Work · Office"
+  subsLeft: number; // open subtasks — while any are, "Done" becomes "Open" (a task completes with its subtasks)
 };
 
 export type NativeConfig = {

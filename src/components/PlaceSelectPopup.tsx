@@ -1,18 +1,29 @@
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { Image, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { C } from '../theme';
 import { Place, Tag } from '../types';
-import { findTag } from '../utils';
-import { CenterPopup } from './Overlay';
+import { findTag, hexA } from '../utils';
+import { hasLocation } from '../maps';
+import { ms } from '../motion';
+import { BottomSheet } from './Overlay';
 import { PlaceIcon } from './PlaceIcon';
-import { Tappable } from './anim';
+import { NoneRow, PickEmpty, PickFooter, PickHead, PickRow, PickSection } from './PickList';
+import { Appear } from './anim';
 
+type Group = { key: string; label: string; color: string | null; list: Place[] };
+
+// The task's place: every saved place, grouped by tag — the task's own tag
+// first (suggested), then untagged ones, then the rest — each with its photo
+// and where it is. Picking one closes the sheet a beat later.
 export function PlaceSelectPopup({
   visible,
   places,
   tags,
   selectedId,
   taskTagId,
+  taskTitle,
+  taskColor,
   onSelect,
   onClose,
 }: {
@@ -21,73 +32,92 @@ export function PlaceSelectPopup({
   tags: Tag[];
   selectedId: string | null;
   taskTagId: string | null;
+  taskTitle: string;
+  taskColor: string;
   onSelect: (id: string | null) => void;
   onClose: () => void;
 }) {
-  // Resolve the task's top-level tag (places are filed under top-level tags).
+  const { height: winH } = useWindowDimensions();
+  // Places are filed under top-level tags.
   const selTag = findTag(tags, taskTagId);
   const topTag = selTag ? (selTag.parentId ? findTag(tags, selTag.parentId) : selTag) : null;
+  const tops = tags.filter((t) => !t.parentId);
+  const known = new Set(tops.map((t) => t.id));
 
-  const [tab, setTab] = useState<'untagged' | 'tag'>(topTag ? 'tag' : 'untagged');
-  React.useEffect(() => {
-    if (visible) setTab(topTag ? 'tag' : 'untagged');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, taskTagId]);
+  const groups: Group[] = [];
+  if (topTag) groups.push({ key: topTag.id, label: `${topTag.name.toUpperCase()}  ·  SUGGESTED`, color: topTag.color, list: places.filter((p) => p.tagId === topTag.id) });
+  groups.push({ key: 'untagged', label: 'UNTAGGED', color: null, list: places.filter((p) => !p.tagId || !known.has(p.tagId)) });
+  tops.filter((t) => t.id !== topTag?.id).forEach((t) => groups.push({ key: t.id, label: t.name.toUpperCase(), color: t.color, list: places.filter((p) => p.tagId === t.id) }));
+  const shown = groups.filter((g) => g.list.length > 0);
 
-  const tagLabel = topTag ? topTag.name : 'Tagged';
-  const list =
-    tab === 'untagged'
-      ? places.filter((p) => !p.tagId)
-      : places.filter((p) => (topTag ? p.tagId === topTag.id : !!p.tagId));
+  const pick = (id: string | null) => {
+    Haptics.selectionAsync().catch(() => {});
+    onSelect(id);
+    setTimeout(onClose, ms(280));
+  };
 
+  let row = 0; // running index for the cascade
   return (
-    <CenterPopup open={visible} onClose={onClose}>
-      <Text style={styles.title}>Select place</Text>
+    <BottomSheet open={visible} onClose={onClose}>
+      <ScrollView style={{ maxHeight: winH * 0.78 }} showsVerticalScrollIndicator={false} bounces={false}>
+        <PickHead title="Place" color={taskColor} context={[taskTitle.trim() || 'New task', selTag?.name].filter(Boolean).join('  ·  ')} />
 
-      <View style={styles.tabs}>
-        <Tappable onPress={() => setTab('untagged')} style={[styles.tab, tab === 'untagged' && styles.tabOn]}>
-          <Text style={[styles.tabTxt, { color: tab === 'untagged' ? '#0b0b0d' : C.textDim }]}>Untagged</Text>
-        </Tappable>
-        <Tappable onPress={() => setTab('tag')} style={[styles.tab, tab === 'tag' && styles.tabOn]}>
-          <Text style={[styles.tabTxt, { color: tab === 'tag' ? '#0b0b0d' : C.textDim }]} numberOfLines={1}>
-            {tagLabel}
-          </Text>
-        </Tappable>
-      </View>
+        <Appear from="up" delay={20} distance={8}>
+          <NoneRow on={selectedId == null} label="No place" onPress={() => pick(null)} />
+        </Appear>
 
-      <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
-        <Tappable onPress={() => onSelect(null)} style={[styles.row, selectedId == null && styles.rowOn]}>
-          <Text style={[styles.rowTxt, { color: C.muted }]}>None</Text>
-          {selectedId == null && <Text style={styles.check}>✓</Text>}
-        </Tappable>
-        {list.length === 0 ? (
-          <Text style={styles.empty}>No places here — add some in Settings → Places.</Text>
+        {places.length === 0 ? (
+          <PickEmpty icon="map-pin" title="No places yet" text="Add places in Settings → Places — pick the spot on Google Maps and give it a photo." />
         ) : (
-          list.map((p) => {
-            const on = p.id === selectedId;
+          shown.map((g) => {
+            const tint = g.color ?? C.accentB;
             return (
-              <Tappable key={p.id} onPress={() => onSelect(p.id)} style={[styles.row, on && styles.rowOn]}>
-                <PlaceIcon size={14} color={on ? C.accentB : C.muted} />
-                <Text style={[styles.rowTxt, { flex: 1 }]}>{p.name}</Text>
-                {on && <Text style={styles.check}>✓</Text>}
-              </Tappable>
+              <View key={g.key}>
+                <PickSection text={g.label} dot={g.color ?? undefined} icon={g.color ? undefined : 'map-pin'} delay={40 + row * 35} />
+                {g.list.map((p) => {
+                  const i = row++;
+                  return (
+                    <Appear key={p.id} from="up" delay={60 + i * 35} distance={8}>
+                      <PickRow
+                        on={selectedId === p.id}
+                        tint={tint}
+                        onPress={() => pick(p.id)}
+                        left={<Thumb place={p} color={tint} />}
+                        title={p.name}
+                        sub={p.address || (hasLocation(p) ? 'Pinned on Google Maps' : 'No location picked yet')}
+                      />
+                    </Appear>
+                  );
+                })}
+              </View>
             );
           })
         )}
+
+        <PickFooter hint="Places are managed in Settings → Places" onDone={onClose} />
       </ScrollView>
-    </CenterPopup>
+    </BottomSheet>
+  );
+}
+
+// The place's photo, or a pin in its tag's colour.
+function Thumb({ place, color }: { place: Place; color: string }) {
+  if (place.photoUri) {
+    return (
+      <View style={styles.thumb}>
+        <Image source={{ uri: place.photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <View pointerEvents="none" style={[styles.thumbRing, { borderColor: hexA(color, 0.35) }]} />
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.thumb, { backgroundColor: hexA(color, 0.14) }]}>
+      <PlaceIcon size={16} color={color} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 14 },
-  tabs: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  tab: { flex: 1, height: 40, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
-  tabOn: { backgroundColor: C.accentB },
-  tabTxt: { fontSize: 13.5, fontWeight: '700' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 12, marginBottom: 4 },
-  rowOn: { backgroundColor: 'rgba(79,209,197,0.14)' },
-  rowTxt: { fontSize: 15, fontWeight: '600', color: C.text },
-  check: { fontSize: 16, fontWeight: '700', color: C.accentB },
-  empty: { color: C.faint, fontSize: 13, paddingVertical: 12, textAlign: 'center' },
+  thumb: { width: 40, height: 40, borderRadius: 12, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  thumbRing: { ...StyleSheet.absoluteFill, borderRadius: 12, borderWidth: 1 },
 });

@@ -68,8 +68,8 @@ export function SettingsScreen({
   const [tempIcon, setTempIcon] = useState('');
   const [subIconFor, setSubIconFor] = useState<string | null>(null); // sub-tag whose icon is being picked
   const [subIconPage, setSubIconPage] = useState<'grid' | 'custom'>('grid');
-  const [previewScale, setPreviewScale] = useState(settings.animScale); // follows the slider while dragging
-  useEffect(() => setPreviewScale(settings.animScale), [settings.animScale]);
+  const [previewSpeed, setPreviewSpeed] = useState(settings.animSpeed); // follows the slider while dragging
+  useEffect(() => setPreviewSpeed(settings.animSpeed), [settings.animSpeed]);
 
   // Back inside a category returns to the category list (App closes the screen).
   useEffect(() => {
@@ -224,28 +224,28 @@ export function SettingsScreen({
               <Toggle value={settings.animations} onChange={(v) => updateSettings({ animations: v })} />
             </Appear>
 
-            <Text style={styles.section}>ANIMATION SCALE</Text>
+            <Text style={styles.section}>ANIMATION SPEED</Text>
             <Appear from="up" delay={70} style={[styles.scaleCard, !settings.animations && { opacity: 0.55 }]}>
               <View style={styles.scaleHead}>
-                <Text style={styles.scaleVal}>{fmtScale(previewScale)}</Text>
-                <Text style={styles.scaleCap}>{previewScale < 1 ? `${fmtScale(1 / previewScale)} faster` : previewScale > 1 ? `${fmtScale(previewScale)} slower` : 'Normal speed'}</Text>
+                <Text style={styles.scaleVal}>{fmtScale(previewSpeed)}</Text>
+                <Text style={styles.scaleCap}>{speedCaption(previewSpeed)}</Text>
                 <View style={{ flex: 1 }} />
-                {settings.animScale !== 1 && settings.animations && (
+                {settings.animSpeed !== 1 && settings.animations && (
                   <Appear from="pop">
-                    <Pressable onPress={() => updateSettings({ animScale: 1 })} style={styles.scaleReset} hitSlop={6}>
+                    <Pressable onPress={() => updateSettings({ animSpeed: 1 })} style={styles.scaleReset} hitSlop={6}>
                       <Feather name="rotate-ccw" size={12} color={C.accentB} />
                       <Text style={styles.scaleResetTxt}>1×</Text>
                     </Pressable>
                   </Appear>
                 )}
               </View>
-              <ScaleSlider value={settings.animScale} disabled={!settings.animations} onPreview={setPreviewScale} onChange={(v) => updateSettings({ animScale: v })} />
+              <ScaleSlider value={settings.animSpeed} disabled={!settings.animations} onPreview={setPreviewSpeed} onChange={(v) => updateSettings({ animSpeed: v })} />
             </Appear>
-            <Text style={styles.hint}>Every animation's duration is multiplied by this — 0.5× plays them twice as fast, 4× four times slower. Springs keep their bounce.</Text>
+            <Text style={styles.hint}>How fast every animation plays — 0.5× at half speed, 4× four times faster. Springs keep their bounce.</Text>
 
             <Text style={styles.section}>PREVIEW</Text>
             <Appear from="up" delay={120}>
-              <MotionPreview scale={previewScale} enabled={settings.animations} />
+              <MotionPreview speed={previewSpeed} enabled={settings.animations} />
             </Appear>
           </View>
         )}
@@ -633,6 +633,14 @@ export function SettingsScreen({
       </CenterPopup>
     </View>
   );
+}
+
+// "Half speed" / "75% speed" / "Normal speed" / "2× faster"
+function speedCaption(v: number): string {
+  if (v === 1) return 'Normal speed';
+  if (v === 0.5) return 'Half speed';
+  if (v < 1) return `${Math.round(v * 100)}% speed`;
+  return `${fmtScale(v)} faster`;
 }
 
 // Put `v` into slot `index`; if it already sits in another slot, the two swap

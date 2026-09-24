@@ -116,10 +116,19 @@ internal object Notifications {
       .setPriority(NotificationCompat.PRIORITY_HIGH)
       .setAutoCancel(true)
       .setContentIntent(Intents.openAppPending(ctx, r))
-      .addAction(R.drawable.operarius_ic_check, "Done", Intents.action(ctx, r, ReminderReceiver.ACTION_DONE))
+      .apply { finishAction(ctx, r) }
       .addAction(R.drawable.operarius_ic_clock, "Snooze ${cfg.snoozeMin} min", Intents.action(ctx, r, ReminderReceiver.ACTION_SNOOZE))
       .build()
     post(ctx, idFor(r), n)
+  }
+
+  /**
+   * "Done" — or, while subtasks are still open (a task only completes with
+   * them), "Open" to go tick them off.
+   */
+  private fun NotificationCompat.Builder.finishAction(ctx: Context, r: Reminder) {
+    if (r.subsLeft > 0) addAction(R.drawable.operarius_ic_arrow_up_right, "Open · ${r.subsLeft} left", Intents.openAndDismiss(ctx, r))
+    else addAction(R.drawable.operarius_ic_check, "Done", Intents.action(ctx, r, ReminderReceiver.ACTION_DONE))
   }
 
   /** A reminder that couldn't ring (phone off) or rang without an answer. */
@@ -135,7 +144,7 @@ internal object Notifications {
       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
       .setAutoCancel(true)
       .setContentIntent(Intents.openAppPending(ctx, r))
-      .addAction(R.drawable.operarius_ic_check, "Done", Intents.action(ctx, r, ReminderReceiver.ACTION_DONE))
+      .apply { finishAction(ctx, r) }
       .addAction(R.drawable.operarius_ic_clock, "Snooze ${cfg.snoozeMin} min", Intents.action(ctx, r, ReminderReceiver.ACTION_SNOOZE))
       .build()
     post(ctx, idFor(r), n)
@@ -163,7 +172,7 @@ internal object Notifications {
       .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
       .addAction(R.drawable.operarius_ic_x, if (r.isIntense) "Stop" else "Dismiss", Intents.action(ctx, r, ReminderReceiver.ACTION_DISMISS))
       .addAction(R.drawable.operarius_ic_clock, "Snooze ${cfg.snoozeMin} min", Intents.action(ctx, r, ReminderReceiver.ACTION_SNOOZE))
-      .addAction(R.drawable.operarius_ic_check, "Done", Intents.action(ctx, r, ReminderReceiver.ACTION_DONE))
+      .apply { finishAction(ctx, r) }
     if (fullScreen) b.setFullScreenIntent(Intents.screen(ctx, r), true)
     return b.build()
   }

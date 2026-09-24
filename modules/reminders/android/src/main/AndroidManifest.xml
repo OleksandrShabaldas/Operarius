@@ -46,6 +46,14 @@
       android:theme="@style/OperariusAlarmTheme"
       android:turnScreenOn="true" />
 
+    <activity
+      android:name="com.operarius.reminders.OpenTaskActivity"
+      android:excludeFromRecents="true"
+      android:exported="false"
+      android:noHistory="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
     <service
       android:name="com.operarius.reminders.AlarmService"
       android:exported="false"

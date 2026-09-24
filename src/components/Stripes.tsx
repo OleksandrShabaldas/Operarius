@@ -4,12 +4,14 @@ import Svg, { Defs, G, Line, LinearGradient, Mask, RadialGradient, Rect, Stop } 
 
 let seq = 0;
 
-export type StripeFade = 'radial' | 'radial-soft' | { top?: number; bottom?: number; left?: number; right?: number };
+type Radial = 'radial' | 'radial-soft' | 'radial-faint';
+export type StripeFade = Radial | { top?: number; bottom?: number; left?: number; right?: number };
 
 // Opacity stops (offset → alpha) for the radial fades. "soft" keeps a gentle
 // plateau around the centre and then eases out over a long tail, so a halo
-// dissolves gradually instead of ending in a visible ring.
-const RADIAL: Record<'radial' | 'radial-soft', [number, number][]> = {
+// dissolves gradually instead of ending in a visible ring; "faint" starts
+// lower and eases out even longer — barely there at the edges.
+const RADIAL: Record<Radial, [number, number][]> = {
   radial: [
     [0, 1],
     [0.55, 0.55],
@@ -20,6 +22,15 @@ const RADIAL: Record<'radial' | 'radial-soft', [number, number][]> = {
     [0.42, 0.7],
     [0.66, 0.26],
     [0.84, 0.07],
+    [1, 0],
+  ],
+  'radial-faint': [
+    [0, 0.85],
+    [0.22, 0.6],
+    [0.44, 0.3],
+    [0.62, 0.12],
+    [0.78, 0.035],
+    [0.9, 0.008],
     [1, 0],
   ],
 };
@@ -56,7 +67,7 @@ export function Stripes({
     for (let x = -h; x < w + h; x += spacing) {
       lines.push(<Line key={x} x1={x} y1={h} x2={x + h} y2={0} stroke={color} strokeWidth={strokeWidth} strokeOpacity={opacity} />);
     }
-    const radial = fade === 'radial' || fade === 'radial-soft' ? fade : null;
+    const radial = fade === 'radial' || fade === 'radial-soft' || fade === 'radial-faint' ? fade : null;
     const edges = fade && !radial && typeof fade === 'object' ? fade : null;
     const t = edges?.top ?? 0;
     const b = edges?.bottom ?? 0;

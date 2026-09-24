@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { C } from '../theme';
-import { sp, spW } from '../motion';
+import { sp, spW, SPEED_STOPS } from '../motion';
 import { Tappable } from './anim';
 
 // ---------------------------------------------------------------------------
@@ -42,11 +42,11 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
 }
 
 // ---------------------------------------------------------------------------
-// ScaleSlider — 0.5× … 4× in fixed stops, evenly spaced (so the common range
-// around 1× gets as much room as the slow end). Drag or tap; a haptic tick on
-// every stop; commits on release.
+// ScaleSlider — animation speed, 0.5× (half speed) … 4× (four times faster), in
+// fixed stops, evenly spaced (so the common range around 1× gets as much room
+// as the ends). Drag or tap; a haptic tick on every stop; commits on release.
 // ---------------------------------------------------------------------------
-export const SCALE_STOPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+const SCALE_STOPS = SPEED_STOPS;
 const LABELED = new Set([0.5, 1, 2, 4]);
 const THUMB = 28;
 
@@ -160,9 +160,10 @@ export function ScaleSlider({
 
 // ---------------------------------------------------------------------------
 // MotionPreview — a tiny task card that keeps gliding across and ticking its
-// checkbox, timed exactly like the app at the chosen scale.
+// checkbox, timed exactly like the app at the chosen speed.
 // ---------------------------------------------------------------------------
-export function MotionPreview({ scale, enabled }: { scale: number; enabled: boolean }) {
+export function MotionPreview({ speed, enabled }: { speed: number; enabled: boolean }) {
+  const scale = 1 / speed; // duration factor
   const [w, setW] = useState(0);
   const x = useSharedValue(0);
   const check = useSharedValue(0);

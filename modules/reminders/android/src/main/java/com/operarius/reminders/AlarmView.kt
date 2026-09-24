@@ -224,7 +224,14 @@ internal class AlarmView(
     // Snooze · Done
     buttons.orientation = LinearLayout.HORIZONTAL
     buttons.addView(glassButton(R.drawable.operarius_ic_clock, "Snooze ${cfg.snoozeMin} min", Palette.TEXT_DIM) { act(Outro.SNOOZE) { listener.onSnooze() } }, LinearLayout.LayoutParams(0, dpi(56f), 1f))
-    buttons.addView(glassButton(R.drawable.operarius_ic_check, "Done", Palette.ACCENT_B) { act(Outro.DONE) { listener.onDone() } }, LinearLayout.LayoutParams(0, dpi(56f), 1f).apply { marginStart = dpi(12f) })
+    // A task completes with its subtasks: while any are open, this opens the
+    // task to tick them off instead of "Done".
+    val finish = if (r.subsLeft > 0) {
+      glassButton(R.drawable.operarius_ic_arrow_up_right, if (r.subsLeft == 1) "1 subtask left" else "${r.subsLeft} subtasks left", Palette.ACCENT_A) { listener.onOpen() }
+    } else {
+      glassButton(R.drawable.operarius_ic_check, "Done", Palette.ACCENT_B) { act(Outro.DONE) { listener.onDone() } }
+    }
+    buttons.addView(finish, LinearLayout.LayoutParams(0, dpi(56f), 1f).apply { marginStart = dpi(12f) })
     column.addView(buttons, lp(LinearLayout.LayoutParams.MATCH_PARENT))
 
     column.addView(slider, lp(LinearLayout.LayoutParams.MATCH_PARENT, dpi(if (compact) 62f else 66f), top = 14f))

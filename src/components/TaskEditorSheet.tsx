@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,14 +9,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { ms, sp } from '../motion';
 import { Clock, Draft, Place, Preset, Reminders, Tag, Task, TaskType } from '../types';
-import { dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, tagLabel, todayKey } from '../utils';
+import { dateHint, dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, tagLabel, todayKey } from '../utils';
 import { carryReminders, reminderSummary } from '../reminders';
 import { ReminderPopup } from './ReminderPopup';
 import { INTENSITY } from './ReminderBits';
 import { CustomColorGrid, CustomIconInput, IconGrid, PaletteRow } from './ColorIcon';
-import { Anchor, DAY_END_ID, DAY_START_ID, DatePickerPopup, DurationPickerPopup, Neighbor, SelectPopup, TimePickerPopup } from './pickers';
+import { Anchor, DAY_END_ID, DAY_START_ID, DatePickerPopup, DurationPickerPopup, Neighbor, TimePickerPopup } from './pickers';
 import { RepeatPopup } from './RepeatPopup';
 import { PlaceSelectPopup } from './PlaceSelectPopup';
+import { TagSelectPopup } from './TagSelectPopup';
 import { BottomSheet, CenterPopup } from './Overlay';
 import { Appear, Tappable } from './anim';
 
@@ -94,6 +95,13 @@ export function TaskEditorSheet({
     setIconPage('main');
   }, [picker]);
 
+  // Pickers open over the sheet with the keyboard put away (so it can't pop
+  // back up — and scroll the name field into view — when they close).
+  const openPicker = (p: Exclude<Picker, null>) => {
+    Keyboard.dismiss();
+    setPicker(p);
+  };
+
   useEffect(() => {
     if (visible) {
       setAttempted(false);
@@ -143,14 +151,12 @@ export function TaskEditorSheet({
     }
   });
 
-  // Group sub-tags under their parent so both are selectable in the picker.
-  const tagOptions: { id: string; label: string }[] = [];
-  tags
-    .filter((t) => !t.parentId)
-    .forEach((top) => {
-      tagOptions.push({ id: top.id, label: top.name });
-      tags.filter((t) => t.parentId === top.id).forEach((sub) => tagOptions.push({ id: sub.id, label: '    ↳  ' + tagLabel(sub) }));
-    });
+  // How many tasks use each tag (shown in the tag picker).
+  const tagUsage = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const t of library) if (t.tagId) m[t.tagId] = (m[t.tagId] ?? 0) + 1;
+    return m;
+  }, [library]);
   const selTag = d ? findTag(tags, d.tagId) : null;
   const topTagId = selTag ? selTag.parentId ?? selTag.id : null;
   const topTagName = topTagId ? tags.find((t) => t.id === topTagId)?.name ?? null : null;
@@ -274,8 +280,12 @@ export function TaskEditorSheet({
               </Tappable>
             </View>
 
+            {/* disableScrollOnKeyboardHide: when the keyboard goes away (e.g. a
+                picker opens over the sheet), stay where the user scrolled to
+                instead of jumping back to where the keyboard first appeared. */}
             <KeyboardAwareScrollView
               keyboardShouldPersistTaps="handled"
+              disableScrollOnKeyboardHide
               showsVerticalScrollIndicator={false}
               bounces={false}
               bottomOffset={FOOTER_H + 30}
@@ -283,7 +293,7 @@ export function TaskEditorSheet({
               contentContainerStyle={{ paddingBottom: 8 }}>
               {/* Name + icon/color marker */}
               <View style={styles.titleRow}>
-                <Tappable onPress={() => setPicker('icon')}>
+                <Tappable onPress={() => openPicker('icon')}>
                   <LinearGradient
                     colors={[d.color, hexA(d.color, 0.75)]}
                     start={{ x: 0.1, y: 0 }}
@@ -338,29 +348,29 @@ export function TaskEditorSheet({
                   {d.type === 'planned' && (
                     <>
                       <View style={styles.timeRow}>
-                        <Tappable style={[styles.timeCard, startPin ? styles.timeCardPinned : null]} onPress={() => setPicker('start')}>
+                        <Tappable style={[styles.timeCard, startPin ? styles.timeCardPinned : null]} onPress={() => openPicker('start')}>
                           <Text style={styles.timeLabel}>START</Text>
                           <Text style={styles.timeVal}>{fmt(d.start, clock)}</Text>
                           {startPinTask && <PinHint key={`s-${startPinTask.id}`} text={`after ${startPinTask.title}`} />}
                         </Tappable>
                         <Feather name="arrow-right" size={18} color={C.faint} />
-                        <Tappable style={[styles.timeCard, endPin ? styles.timeCardPinned : null]} onPress={() => setPicker('end')}>
+                        <Tappable style={[styles.timeCard, endPin ? styles.timeCardPinned : null]} onPress={() => openPicker('end')}>
                           <Text style={styles.timeLabel}>END</Text>
                           <Text style={styles.timeVal}>{fmt(end, clock)}</Text>
                           {endPinTask && <PinHint key={`e-${endPinTask.id}`} text={`until ${endPinTask.title}`} />}
                         </Tappable>
                       </View>
-                      <FieldRow icon="watch" label="Duration" value={fmtDur(d.dur)} onPress={() => setPicker('dur')} />
+                      <FieldRow icon="watch" label="Duration" value={fmtDur(d.dur)} onPress={() => openPicker('dur')} />
                     </>
                   )}
-                  <FieldRow icon="calendar" label="Date" value={dateLabel(d.date)} onPress={() => setPicker('date')} />
-                  <FieldRow icon="repeat" label="Repeat" value={repeatSummary(d.repeat)} onPress={() => setPicker('repeat')} />
+                  <FieldRow icon="calendar" label="Date" value={dateLabel(d.date)} sub={dateHint(d.date)} onPress={() => openPicker('date')} />
+                  <FieldRow icon="repeat" label="Repeat" value={repeatSummary(d.repeat)} onPress={() => openPicker('repeat')} />
                 </>
               )}
 
               {/* Reminders */}
               <SectionHeader icon="bell" label="REMINDERS" />
-              <ReminderField r={d.reminders} type={d.type} clock={clock} onPress={() => setPicker('remind')} />
+              <ReminderField r={d.reminders} type={d.type} clock={clock} onPress={() => openPicker('remind')} />
 
               {/* Organize */}
               <SectionHeader icon="tag" label="ORGANIZE" />
@@ -370,18 +380,29 @@ export function TaskEditorSheet({
                 label="Tag"
                 value={selTag ? tagLabel(selTag) : 'None'}
                 valueColor={selTag ? selTag.color : C.faint}
-                onPress={() => setPicker('tag')}
+                onPress={() => openPicker('tag')}
               />
-              <FieldRow icon="map-pin" label="Place" value={place?.name || 'None'} valueColor={place ? C.text : C.faint} onPress={() => setPicker('place')} />
+              <FieldRow icon="map-pin" label="Place" value={place?.name || 'None'} valueColor={place ? C.text : C.faint} onPress={() => openPicker('place')} />
 
-              {/* Subtasks */}
+              {/* Subtasks — a repeating task ticks them off per day (on the
+                  timeline / in its details), so here they're just the list. */}
               <SectionHeader icon="check-square" label="SUBTASKS" />
               {d.subtasks.map((s, i) => (
                 <Appear key={s.id} from="up" distance={8}>
                   <View style={styles.subRow}>
-                    <Tappable onPress={() => toggleSub(s.id)} style={[styles.subCheck, s.done && { backgroundColor: d.color, borderColor: d.color }]}>
-                      {s.done && <Feather name="check" size={13} color="#0b0b0d" />}
-                    </Tappable>
+                    {d.repeat ? (
+                      <View style={styles.subBullet}>
+                        <View style={[styles.subBulletDot, { backgroundColor: d.color }]} />
+                      </View>
+                    ) : (
+                      <Tappable onPress={() => toggleSub(s.id)} style={[styles.subCheck, s.done && { backgroundColor: d.color, borderColor: d.color }]}>
+                        {s.done && (
+                          <Appear from="pop">
+                            <Feather name="check" size={13} color="#0b0b0d" />
+                          </Appear>
+                        )}
+                      </Tappable>
+                    )}
                     <TextInput
                       ref={(r) => {
                         subRefs.current[s.id] = r;
@@ -393,7 +414,7 @@ export function TaskEditorSheet({
                       returnKeyType={i === d.subtasks.length - 1 ? 'done' : 'next'}
                       placeholder="Subtask"
                       placeholderTextColor={C.faint}
-                      style={[styles.subInput, s.done && styles.subDone]}
+                      style={[styles.subInput, s.done && !d.repeat && styles.subDone]}
                     />
                     <Tappable onPress={() => removeSub(s.id)} hitSlop={8} style={styles.subX}>
                       <Feather name="x" size={15} color={C.faint} />
@@ -401,6 +422,7 @@ export function TaskEditorSheet({
                   </View>
                 </Appear>
               ))}
+              <SubtaskNote d={d} isNew={!isEditing} subsTouched={touched.current.has('subtasks')} />
               <Tappable onPress={addSubtask} style={styles.addSub}>
                 <Feather name="plus" size={15} color={C.accentA} />
                 <Text style={styles.addSubTxt}>Add subtask</Text>
@@ -553,11 +575,49 @@ export function TaskEditorSheet({
         onClose={() => setPicker(null)}
       />
       <DatePickerPopup visible={picker === 'date'} value={d?.date || todayKey()} weekStart={weekStart} onChange={(key) => onPatch({ date: key })} onClose={() => setPicker(null)} />
-      <SelectPopup visible={picker === 'tag'} title="Select tag" options={tagOptions} selectedId={d?.tagId ?? null} emptyText="No tags yet — add some in Settings." onSelect={(id) => patch({ tagId: id })} onClose={() => setPicker(null)} />
-      <PlaceSelectPopup visible={picker === 'place'} places={places} tags={tags} selectedId={d?.placeId ?? null} taskTagId={d?.tagId ?? null} onSelect={(id) => patch({ placeId: id })} onClose={() => setPicker(null)} />
+      <TagSelectPopup
+        visible={picker === 'tag'}
+        tags={tags}
+        selectedId={d?.tagId ?? null}
+        usage={tagUsage}
+        taskTitle={d?.title ?? ''}
+        taskColor={d?.color ?? C.accentA}
+        onSelect={(id) => patch({ tagId: id })}
+        onClose={() => setPicker(null)}
+      />
+      <PlaceSelectPopup
+        visible={picker === 'place'}
+        places={places}
+        tags={tags}
+        selectedId={d?.placeId ?? null}
+        taskTagId={d?.tagId ?? null}
+        taskTitle={d?.title ?? ''}
+        taskColor={d?.color ?? C.accentA}
+        onSelect={(id) => patch({ placeId: id })}
+        onClose={() => setPicker(null)}
+      />
       <RepeatPopup visible={picker === 'repeat'} repeat={d?.repeat ?? null} baseDate={d?.date || todayKey()} weekStart={weekStart} onChange={(r) => patch({ repeat: r })} onClose={() => setPicker(null)} />
       <ReminderPopup visible={picker === 'remind'} draft={draft} onChange={(r) => patch({ reminders: r })} onClose={() => setPicker(null)} />
     </>
+  );
+}
+
+// What the subtasks mean for the task, when it matters: a repeating task ticks
+// them off per day; ticking them all completes the task; an open one reopens it.
+function SubtaskNote({ d, isNew, subsTouched }: { d: Draft; isNew: boolean; subsTouched: boolean }) {
+  const n = d.subtasks.length;
+  if (!n) return null;
+  const all = d.subtasks.every((s) => s.done);
+  let note: { key: string; icon: keyof typeof Feather.glyphMap; color: string; text: string } | null = null;
+  if (d.repeat) note = { key: 'rep', icon: 'repeat', color: C.muted, text: 'Ticked off day by day — on the timeline or in the task’s details' };
+  else if (all && !d.done && (isNew || subsTouched)) note = { key: 'all', icon: 'check-circle', color: C.accentB, text: 'All ticked — saving completes the task' };
+  else if (!all && d.done && subsTouched) note = { key: 'open', icon: 'rotate-ccw', color: C.muted, text: 'A subtask is open — saving reopens the task' };
+  if (!note) return null;
+  return (
+    <Appear key={note.key} from="up" distance={6} style={styles.subNote}>
+      <Feather name={note.icon} size={12} color={note.color} />
+      <Text style={[styles.subNoteTxt, { color: note.color }]}>{note.text}</Text>
+    </Appear>
   );
 }
 
@@ -698,6 +758,7 @@ function FieldRow({
   icon,
   label,
   value,
+  sub,
   onPress,
   valueColor,
   iconColor,
@@ -705,6 +766,7 @@ function FieldRow({
   icon: keyof typeof Feather.glyphMap;
   label: string;
   value: string;
+  sub?: string | null; // small, muted line under the value (e.g. the date behind "Tomorrow")
   onPress: () => void;
   valueColor?: string;
   iconColor?: string;
@@ -715,9 +777,18 @@ function FieldRow({
         <Feather name={icon} size={15} color={iconColor || C.textDim} />
       </View>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, { color: valueColor || C.text }]} numberOfLines={1}>
-        {value}
-      </Text>
+      <View style={styles.valCol}>
+        <Text style={[styles.rowValue, styles.valInCol, { color: valueColor || C.text }]} numberOfLines={1}>
+          {value}
+        </Text>
+        {!!sub && (
+          <Appear key={sub} from="up" distance={5}>
+            <Text style={styles.valSub} numberOfLines={1}>
+              {sub}
+            </Text>
+          </Appear>
+        )}
+      </View>
       <Feather name="chevron-right" size={18} color={C.faint} />
     </Tappable>
   );
@@ -771,12 +842,19 @@ const styles = StyleSheet.create({
   // paddingRight: layout rounding can shave the last pixel off a content-sized
   // single-line text, and Android then ellipsizes it ("30 m…") — 1dp absorbs that.
   rowValue: { fontSize: 15, fontWeight: '700', maxWidth: '52%', fontVariant: ['tabular-nums'], paddingRight: 1 },
+  valCol: { alignItems: 'flex-end', maxWidth: '52%' },
+  valInCol: { maxWidth: '100%' },
+  valSub: { fontSize: 11, fontWeight: '600', color: C.muted, marginTop: 1, fontVariant: ['tabular-nums'], paddingRight: 1 },
   remVal: { alignItems: 'flex-end', maxWidth: '56%' },
   remValTxt: { maxWidth: '100%' },
   remSub: { fontSize: 11, fontWeight: '800', marginTop: 2, letterSpacing: 0.3 },
 
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 8 },
   subCheck: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  subBullet: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  subBulletDot: { width: 7, height: 7, borderRadius: 4, opacity: 0.85 },
+  subNote: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 2, marginBottom: 2, paddingLeft: 2 },
+  subNoteTxt: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 16 },
   subInput: { flex: 1, color: C.text, fontSize: 15, paddingVertical: 7, paddingHorizontal: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10 },
   subDone: { color: C.faint, textDecorationLine: 'line-through' },
   subX: { padding: 4 },

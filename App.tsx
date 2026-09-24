@@ -12,7 +12,7 @@ import { C } from './src/theme';
 import { ms, setMotion } from './src/motion';
 import { AppProvider, useApp } from './src/store';
 import { Draft, TaskType } from './src/types';
-import { parseId } from './src/recurrence';
+import { occurrence, parseId } from './src/recurrence';
 import { todayKey } from './src/utils';
 import { carryReminders, defaultReminders, useReminderSync } from './src/reminders';
 import { TodayScreen } from './src/screens/TodayScreen';
@@ -67,8 +67,8 @@ function Root() {
   // Apply the animation settings before any child starts an animation (layout
   // effects run before every passive effect in the tree).
   useLayoutEffect(() => {
-    setMotion(settings.animations, settings.animScale);
-  }, [settings.animations, settings.animScale]);
+    setMotion(settings.animations, settings.animSpeed);
+  }, [settings.animations, settings.animSpeed]);
 
   const runUpdateCheck = useCallback(async (manual: boolean) => {
     setChecking(true);
@@ -208,7 +208,7 @@ function Root() {
     const base = tasks.find((x) => x.id === parseId(viewId).baseId);
     setViewId(null);
     if (base) {
-      const { id: _id, done: _done, doneDates: _dd, ...rest } = base;
+      const { id: _id, done: _done, doneDates: _dd, subDone: _sd, ...rest } = base;
       setAutoDate(true);
       setDraftTouched(['emoji', 'color', 'type', 'start', 'dur', 'tagId', 'placeId', 'notes', 'subtasks', 'repeat', 'reminders']);
       // Reminders come along — the relative ones, and custom ones still ahead.
@@ -248,7 +248,7 @@ function Root() {
   if (viewId) {
     const { baseId, date } = parseId(viewId);
     const base = tasks.find((t) => t.id === baseId) || null;
-    viewTask = base && base.repeat && date ? { ...base, id: viewId, date, done: base.doneDates.includes(date) } : base;
+    viewTask = base && base.repeat && date ? occurrence(base, date) : base;
   }
 
   return (

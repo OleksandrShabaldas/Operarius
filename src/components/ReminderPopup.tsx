@@ -7,7 +7,7 @@ import { C } from '../theme';
 import { ms, sp } from '../motion';
 import { useApp } from '../store';
 import { Clock, CustomReminder, Draft, Reminders, TaskType } from '../types';
-import { dateLabel, fmt, hexA } from '../utils';
+import { dateHint, dateLabel, fmt, hexA } from '../utils';
 import {
   blankReminders,
   fmtOffset,
@@ -316,7 +316,7 @@ function CustomRow({ c, clock, onEdit, onRemove }: { c: CustomReminder; clock: C
         <Text style={[styles.cTitle, past && { color: C.muted }]}>
           {dateLabel(c.date)} · {fmt(c.min, clock)}
         </Text>
-        <Text style={[styles.cSub, past && { color: C.danger }]}>{past ? 'Already passed — won’t ring' : fromNow(at)}</Text>
+        <Text style={[styles.cSub, past && { color: C.danger }]}>{past ? 'Already passed — won’t ring' : [dateHint(c.date), fromNow(at)].filter(Boolean).join('  ·  ')}</Text>
       </View>
       <Tappable onPress={onRemove} hitSlop={10} style={styles.cX}>
         <Feather name="x" size={16} color={C.faint} />

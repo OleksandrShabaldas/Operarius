@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +10,8 @@ import { useApp } from '../store';
 import { findTag, hexA } from '../utils';
 import { Clock, Tag } from '../types';
 import { customLabel, INTENSITY_COLOR, nextCustom } from '../reminders';
-import { stagger, Tappable } from '../components/anim';
+import { Appear, stagger, Tappable } from '../components/anim';
+import { TaskCheck } from '../components/TaskCheck';
 
 export function TodoScreen({
   onOpenInfo,
@@ -72,11 +73,19 @@ function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag 
   const remColor = task.reminders ? INTENSITY_COLOR[task.reminders.intensity] : C.muted;
   const subCount = task.subtasks.length;
   const subDone = task.subtasks.filter((s) => s.done).length;
+  // Ticked with subtasks still open: the count says what's left for a moment.
+  const [nudge, setNudge] = useState(0);
+  const [hint, setHint] = useState(false);
+  useEffect(() => {
+    if (!nudge) return;
+    setHint(true);
+    const h = setTimeout(() => setHint(false), 2400);
+    return () => clearTimeout(h);
+  }, [nudge]);
+  const warn = hint && subDone < subCount;
   return (
     <Tappable style={styles.row} onPress={onOpen}>
-      <Tappable onPress={onToggle} hitSlop={8} scaleTo={0.82} style={[styles.check, { boxShadow: `inset 0 0 0 2px ${task.done ? task.color : hexA(task.color, 0.5)}`, backgroundColor: task.done ? task.color : 'transparent' }]}>
-        {task.done && <Feather name="check" size={14} color="#0b0b0d" />}
-      </Tappable>
+      <TaskCheck color={task.color} done={task.done} subTotal={subCount} subLeft={subCount - subDone} onToggle={onToggle} onBlocked={() => setNudge((n) => n + 1)} />
       <LinearGradient colors={[task.color, hexA(task.color, 0.72)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.icon}>
         <Text style={styles.iconTxt}>{task.emoji}</Text>
       </LinearGradient>
@@ -88,7 +97,22 @@ function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag 
               <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
             </View>
           )}
-          {subCount > 0 && <Text style={styles.subCount}>☑ {subDone}/{subCount}</Text>}
+          {subCount > 0 &&
+            (warn ? (
+              <Appear key={nudge} from="left" distance={8} style={styles.subWarn}>
+                <Feather name="lock" size={10} color={C.now} />
+                <Text style={[styles.subCount, { color: C.now }]}>
+                  {subCount - subDone === 1 ? '1 subtask left' : `${subCount - subDone} subtasks left`}
+                </Text>
+              </Appear>
+            ) : (
+              <View style={styles.subWarn}>
+                <Feather name="check-square" size={10.5} color={C.muted} />
+                <Text style={styles.subCount}>
+                  {subDone}/{subCount}
+                </Text>
+              </View>
+            ))}
           {next && (
             <View style={[styles.chip, styles.remChip, { backgroundColor: hexA(remColor, 0.12) }]}>
               <Feather name="bell" size={10} color={remColor} />
@@ -112,7 +136,6 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 13.5, color: C.faint },
   section: { fontSize: 11, color: C.muted, fontWeight: '700', marginTop: 16, marginBottom: 10, letterSpacing: 0.3 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 8, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.05)' },
-  check: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   icon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 18 },
   rowTitle: { fontSize: 15.5, fontWeight: '600', color: C.text },
@@ -120,6 +143,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   chip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 7 },
   chipTxt: { fontSize: 10.5, fontWeight: '600' },
-  subCount: { fontSize: 11.5, color: C.muted, fontWeight: '600' },
+  subCount: { fontSize: 11.5, color: C.muted, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  subWarn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   remChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

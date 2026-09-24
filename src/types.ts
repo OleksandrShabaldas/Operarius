@@ -46,6 +46,7 @@ export type Task = {
   subtasks: Subtask[];
   repeat: Repeat | null; // recurrence rule (planned/allday)
   doneDates: string[]; // per-occurrence completion for repeating tasks
+  subDone?: Record<string, string[]>; // repeating tasks: subtask ids ticked off per occurrence (YYYY-MM-DD)
   expanded: boolean; // subtasks shown inline on the card (persisted)
   reminders: Reminders | null; // null = no reminders
 };
@@ -95,7 +96,7 @@ export type Settings = {
   emojis: string[]; // the task icon set (editable)
   swapOnDrag: boolean; // dragging a task past another swaps them (off = allow overlap)
   animations: boolean; // app-wide animations on/off
-  animScale: number; // animation duration scale, 0.5 (faster) … 4 (slower)
+  animSpeed: number; // animation speed: 0.5 (half speed) … 1 (normal) … 4 (four times faster)
   // Reminders
   remindersOn: boolean; // master switch (off = nothing notifies or rings)
   reminderDefault: { before: number | null; intensity: ReminderIntensity }; // what a new task starts with

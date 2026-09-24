@@ -10,6 +10,16 @@ export const MINH = 60; // min card height (no meta row)
 export const CHIPGAP = 20; // gap reserved when a "x min" pill sits between cards
 export const MIN_FREE_H = 46; // min height for a tappable "free" block
 
+// Horizontal geometry: hour labels on the far left, then the timeline rail the
+// task pills stand on (each task's colour + icon, as tall as its card), then
+// the lane of cards, free blocks and bands to the right of the rail.
+export const RAIL_X = 56; // centre of the timeline rail
+export const PILL_W = 38; // width of a task's pill on the rail
+export const PILL_L = RAIL_X - PILL_W / 2; // left edge of the pills
+export const PILL_GAP = 8; // pill → card
+export const LANE_L = PILL_L + PILL_W + PILL_GAP; // left edge of cards, free blocks, gap chips
+export const LANE_R = 16; // right inset of the same
+
 // Default visible day window (overridable in Settings).
 export const DEFAULT_DAY_START = 7 * 60; // 07:00
 export const DEFAULT_DAY_END = 23 * 60; // 23:00

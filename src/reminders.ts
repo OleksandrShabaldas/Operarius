@@ -163,8 +163,20 @@ function detailText(t: Task, s: Settings): string {
   return [tag ? tagLabel(tag) : null, place?.name ?? null].filter(Boolean).join(' · ');
 }
 
+// Subtasks still open for the occurrence a reminder belongs to (repeating
+// tasks tick them off per day). While any are, a reminder offers "Open" instead
+// of "Done" — a task only completes once its subtasks are.
+function openSubs(t: Task, date: string | null): number {
+  if (t.repeat && date) {
+    const ticked = t.subDone?.[date] ?? [];
+    return t.subtasks.filter((x) => !ticked.includes(x.id)).length;
+  }
+  return t.subtasks.filter((x) => !x.done).length;
+}
+
 export function toNative(t: Task, f: Fire, s: Settings): NativeReminder {
   return {
+    subsLeft: openSubs(t, f.date),
     id: f.id,
     taskKey: f.taskKey,
     date: f.date,
@@ -225,7 +237,7 @@ export function nativeConfig(s: Settings): NativeConfig {
     vibrate: s.alarmVibrate,
     gentle: s.alarmGentle,
     clock24: s.clock === '24h',
-    animScale: s.animations ? s.animScale : 0,
+    animScale: s.animations ? 1 / s.animSpeed : 0, // the native screen scales durations
   };
 }
 

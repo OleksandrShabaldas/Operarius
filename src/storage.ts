@@ -13,6 +13,7 @@ import {
   PALETTE_SLOTS,
 } from './theme';
 import { coordsFromText } from './maps';
+import { MAX_SPEED, MIN_SPEED, nearestSpeed } from './motion';
 
 // ---------------------------------------------------------------------------
 // Persistence layer.
@@ -58,7 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   emojis: [...EMOJIS],
   swapOnDrag: false,
   animations: true,
-  animScale: 1,
+  animSpeed: 1,
   remindersOn: true,
   reminderDefault: { before: null, intensity: 'easy' },
   snoozeMin: 10,
@@ -150,9 +151,33 @@ function migrateTask(raw: any): Task {
     subtasks: Array.isArray(raw.subtasks) ? raw.subtasks : [],
     repeat: migrateRepeat(raw.repeat),
     doneDates: Array.isArray(raw.doneDates) ? raw.doneDates.filter((d: any) => typeof d === 'string') : [],
+    subDone: migrateSubDone(raw.subDone),
     expanded: !!raw.expanded,
     reminders: migrateReminders(raw.reminders),
   };
+}
+
+function migrateSubDone(raw: any): Record<string, string[]> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v)) {
+      const ids = v.filter((x): x is string => typeof x === 'string');
+      if (ids.length) out[k] = ids;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+// Animation speed. Older builds stored the same 0.5×–4× number as a duration
+// factor (`animScale`, where 2× meant slower); the number is kept, now read the
+// way it was meant — as speed (2× = twice as fast).
+function migrateSpeed(parsed: any): number {
+  const v = parsed?.animSpeed;
+  if (typeof v === 'number' && v >= MIN_SPEED && v <= MAX_SPEED) return v;
+  const old = parsed?.animScale;
+  if (typeof old === 'number' && old >= MIN_SPEED && old <= MAX_SPEED) return nearestSpeed(old);
+  return 1;
 }
 
 function migrateRepeat(raw: any): Repeat | null {
@@ -215,7 +240,7 @@ export const localRepository: Repository = {
         emojis: fitSlots(parsed.emojis, EMOJIS, ICON_SLOTS),
         swapOnDrag: typeof parsed.swapOnDrag === 'boolean' ? parsed.swapOnDrag : false,
         animations: typeof parsed.animations === 'boolean' ? parsed.animations : true,
-        animScale: typeof parsed.animScale === 'number' && parsed.animScale >= 0.5 && parsed.animScale <= 4 ? parsed.animScale : 1,
+        animSpeed: migrateSpeed(parsed),
         remindersOn: typeof parsed.remindersOn === 'boolean' ? parsed.remindersOn : true,
         reminderDefault: {
           before: offsetOrNull(parsed.reminderDefault?.before),

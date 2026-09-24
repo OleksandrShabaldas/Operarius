@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
@@ -161,6 +162,15 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
     const slot = layout.pos[ctx.id] ?? { top: ctx.baseY, h: cardHeight(ctx.task) };
     dragged = { task: ctx.task, h: slot.h, baseY: ctx.baseY, liveStart: land, slot };
   }
+
+  // A light tap the moment the held card's landing starts overlapping a task
+  // (it then fuses into that task's stack on screen).
+  const dragOver = !!dragged && !!(dragged.slot.joinTop || dragged.slot.joinBottom);
+  const overRef = useRef(false);
+  useEffect(() => {
+    if (dragOver && !overRef.current) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    overRef.current = dragOver;
+  }, [dragOver]);
 
   // Latest values for the (stable) drag callbacks.
   const live = useRef({ layout, planned, settings, viewportH });

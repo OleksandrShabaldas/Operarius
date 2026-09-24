@@ -7,6 +7,14 @@ export function hexA(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+// The colour mixed toward the app background by `k` (0 = itself, 1 = background):
+// the look of `hexA(hex, 1 - k)` over the background, but opaque.
+export function shade(hex: string, k: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c: number, bg: number) => Math.round(c + (bg - c) * k);
+  return `rgb(${mix((n >> 16) & 255, 11)},${mix((n >> 8) & 255, 11)},${mix(n & 255, 13)})`;
+}
+
 // minutes-of-day -> "7:00 AM" (12h) or "07:00" (24h)
 export function fmt(min: number, clock: Clock = '12h'): string {
   min = ((min % 1440) + 1440) % 1440;
@@ -132,6 +140,19 @@ export function dateLabel(key: string | null): string {
   if (key === t) return 'Today';
   if (key === addDays(t, 1)) return 'Tomorrow';
   if (key === addDays(t, -1)) return 'Yesterday';
+  return shortDate(key);
+}
+
+// "Thu, Sep 24"
+export function shortDate(key: string): string {
   const d = dateFromKey(key);
   return `${DOW[(d.getDay() + 6) % 7]}, ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+}
+
+// The calendar date behind a relative label ("Today" → "Thu, Sep 24"), shown
+// small next to it; null when the label already is the date.
+export function dateHint(key: string | null): string | null {
+  if (!key) return null;
+  const t = todayKey();
+  return key === t || key === addDays(t, 1) || key === addDays(t, -1) ? shortDate(key) : null;
 }

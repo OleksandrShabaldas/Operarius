@@ -39,6 +39,16 @@ type Ctx = {
 
 const AppCtx = createContext<Ctx | null>(null);
 
+// Are all of a task's subtasks ticked off (for one occurrence of a repeating task)?
+function allSubsDone(t: Task, date: string | null): boolean {
+  if (!t.subtasks.length) return true;
+  if (t.repeat && date) {
+    const ticked = t.subDone?.[date] ?? [];
+    return t.subtasks.every((x) => ticked.includes(x.id));
+  }
+  return t.subtasks.every((x) => x.done);
+}
+
 export function AppProvider({
   children,
   repo = localRepository,
@@ -92,11 +102,21 @@ export function AppProvider({
 
   const saveDraft = useCallback((draft: Draft) => {
     const title = draft.title.trim() === '' ? 'Untitled' : draft.title.trim();
+    // A single task with subtasks is complete exactly when all of them are
+    // (repeating tasks track that per day, not in the series' template).
+    const fix = (t: Task): Task => (!t.repeat && t.subtasks.length ? { ...t, done: t.subtasks.every((x) => x.done) } : t);
+    const ticks = (t: Pick<Task, 'subtasks'>) => t.subtasks.map((x) => `${x.id}:${x.done ? 1 : 0}`).join(',');
     setTasks((prev) => {
       if (draft.id) {
-        return prev.map((t) => (t.id === draft.id ? ({ ...t, ...draft, title } as Task) : t));
+        // Only re-derive when the subtasks changed — renaming an older task
+        // must not quietly reopen it.
+        return prev.map((t) => {
+          if (t.id !== draft.id) return t;
+          const next = { ...t, ...draft, title } as Task;
+          return ticks(next) !== ticks(t) ? fix(next) : next;
+        });
       }
-      const task: Task = { ...(draft as Omit<Task, 'id'>), title, id: genId() };
+      const task: Task = fix({ ...(draft as Omit<Task, 'id'>), title, id: genId() });
       return [...prev, task];
     });
   }, []);
@@ -107,6 +127,8 @@ export function AppProvider({
   }, []);
 
   // Toggle completion — per-occurrence (doneDates) for a repeating instance.
+  // A task can't be ticked off while any of its subtasks are still open (the
+  // UI explains why; this is the guard).
   const toggleDone = useCallback((id: string) => {
     const { baseId, date } = parseId(id);
     setTasks((prev) =>
@@ -114,13 +136,17 @@ export function AppProvider({
         if (t.id !== baseId) return t;
         if (t.repeat && date) {
           const has = t.doneDates.includes(date);
+          if (!has && !allSubsDone(t, date)) return t;
           return { ...t, doneDates: has ? t.doneDates.filter((d) => d !== date) : [...t.doneDates, date] };
         }
+        if (!t.done && !allSubsDone(t, null)) return t;
         return { ...t, done: !t.done };
       })
     );
   }, []);
 
+  // Set completion outright (e.g. "Done" on a reminder) — finishing a task
+  // finishes its subtasks too, so the two never disagree.
   const setDone = useCallback((id: string, done: boolean) => {
     const { baseId, date } = parseId(id);
     setTasks((prev) =>
@@ -129,21 +155,39 @@ export function AppProvider({
         if (t.repeat && date) {
           const has = t.doneDates.includes(date);
           if (has === done) return t;
-          return { ...t, doneDates: done ? [...t.doneDates, date] : t.doneDates.filter((d) => d !== date) };
+          if (!done) return { ...t, doneDates: t.doneDates.filter((d) => d !== date) };
+          const subDone = t.subtasks.length ? { ...(t.subDone ?? {}), [date]: t.subtasks.map((x) => x.id) } : t.subDone;
+          return { ...t, subDone, doneDates: [...t.doneDates, date] };
         }
-        return t.done === done ? t : { ...t, done };
+        if (t.done === done) return t;
+        return done ? { ...t, done, subtasks: t.subtasks.map((x) => ({ ...x, done: true })) } : { ...t, done };
       })
     );
   }, []);
 
+  // Tick a subtask. Ticking the last open one completes the task; unticking
+  // one of a completed task reopens it. Repeating tasks keep this per day.
   const toggleSubtask = useCallback((taskId: string, subId: string) => {
-    const { baseId } = parseId(taskId);
+    const { baseId, date } = parseId(taskId);
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === baseId
-          ? { ...t, subtasks: t.subtasks.map((s) => (s.id === subId ? { ...s, done: !s.done } : s)) }
-          : t
-      )
+      prev.map((t) => {
+        if (t.id !== baseId) return t;
+        if (t.repeat && date) {
+          const cur = new Set(t.subDone?.[date] ?? []);
+          if (cur.has(subId)) cur.delete(subId);
+          else cur.add(subId);
+          const ids = t.subtasks.map((x) => x.id).filter((x) => cur.has(x));
+          const subDone = { ...(t.subDone ?? {}) };
+          if (ids.length) subDone[date] = ids;
+          else delete subDone[date];
+          const all = t.subtasks.length > 0 && ids.length === t.subtasks.length;
+          const has = t.doneDates.includes(date);
+          const doneDates = all ? (has ? t.doneDates : [...t.doneDates, date]) : t.doneDates.filter((d) => d !== date);
+          return { ...t, subDone: Object.keys(subDone).length ? subDone : undefined, doneDates };
+        }
+        const subtasks = t.subtasks.map((x) => (x.id === subId ? { ...x, done: !x.done } : x));
+        return { ...t, subtasks, done: subtasks.every((x) => x.done) };
+      })
     );
   }, []);
 

@@ -758,53 +758,6 @@ function PinDiagram({ kind, anchor, gap, s, e, clock }: { kind: 'after' | 'until
   );
 }
 
-// ---- Single-select list popup (tags / places) -----------------------------
-export type SelectOption = { id: string; label: string; sub?: string };
-export function SelectPopup({
-  visible,
-  title,
-  options,
-  selectedId,
-  emptyText,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  title: string;
-  options: SelectOption[];
-  selectedId: string | null;
-  emptyText?: string;
-  onSelect: (id: string | null) => void;
-  onClose: () => void;
-}) {
-  return (
-    <CenterPopup visible={visible} title={title} onClose={onClose}>
-      {options.length === 0 ? (
-        <Text style={styles.empty}>{emptyText || 'Nothing here yet — add some in Settings.'}</Text>
-      ) : (
-        <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-          <Tappable onPress={() => onSelect(null)} style={[styles.row, selectedId == null && styles.rowOn]}>
-            <Text style={[styles.rowTxt, { color: C.muted }]}>None</Text>
-            {selectedId == null && <Text style={styles.check}>✓</Text>}
-          </Tappable>
-          {options.map((o) => {
-            const on = o.id === selectedId;
-            return (
-              <Tappable key={o.id} onPress={() => onSelect(o.id)} style={[styles.row, on && styles.rowOn]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTxt}>{o.label}</Text>
-                  {!!o.sub && <Text style={styles.rowSub}>{o.sub}</Text>}
-                </View>
-                {on && <Text style={styles.check}>✓</Text>}
-              </Tappable>
-            );
-          })}
-        </ScrollView>
-      )}
-    </CenterPopup>
-  );
-}
-
 // ---- Month calendar (reused by the date picker and the repeat end-date) ----
 export function MonthCalendar({
   value,
@@ -1010,11 +963,6 @@ const styles = StyleSheet.create({
   backTxt: { fontSize: 13.5, fontWeight: '600', color: C.textDim },
 
   // Select list
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 14, borderRadius: 12, marginBottom: 4 },
-  rowOn: { backgroundColor: 'rgba(79,209,197,0.14)' },
-  rowTxt: { fontSize: 15, fontWeight: '600', color: C.text },
-  rowSub: { fontSize: 12, color: C.muted, marginTop: 2 },
-  check: { fontSize: 16, fontWeight: '700', color: C.accentB },
 
   // Calendar
   calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },

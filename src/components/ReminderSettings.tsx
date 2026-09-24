@@ -79,6 +79,7 @@ export function ReminderSettings() {
       endAt,
       timeText: `${fmt(m(startAt), settings.clock)} – ${fmt(m(endAt), settings.clock)}`,
       detail: 'A test — nothing is changed',
+      subsLeft: 0,
     };
     await Native.test(sample, TEST_DELAY);
     setTesting({ kind, until: Date.now() + TEST_DELAY * 1000 });

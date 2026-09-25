@@ -15,7 +15,7 @@ import { Draft, TaskType } from './src/types';
 import { occurrence, parseId } from './src/recurrence';
 import { todayKey } from './src/utils';
 import { carryReminders, defaultReminders, useReminderSync } from './src/reminders';
-import { useCalendarSync } from './src/calendarSync';
+import { holdCalendarSync, useCalendarSync } from './src/calendarSync';
 import { useWidgetSync } from './src/widgets';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TodoScreen } from './src/screens/TodoScreen';
@@ -25,6 +25,8 @@ import { BottomNav, Tab } from './src/components/BottomNav';
 import { TaskEditorSheet } from './src/components/TaskEditorSheet';
 import { TaskInfoSheet } from './src/components/TaskInfoSheet';
 import { UpdateModal } from './src/components/UpdateModal';
+import { UNDO_MS, UndoBar, UndoItem } from './src/components/UndoBar';
+import { Deleted } from './src/store';
 import { checkForUpdate, currentVersion, ReleaseInfo } from './src/updater';
 
 const DAY_MIN = 24 * 60;
@@ -52,7 +54,7 @@ function BackgroundGlow() {
 
 function Root() {
   const app = useApp();
-  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, toggleDone, setDone, toggleSubtask, toggleStar, applyCalendarSync } = app;
+  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, restoreTask, toggleDone, setDone, toggleSubtask, toggleStar, applyCalendarSync } = app;
 
   const [tab, setTab] = useState<Tab>('today');
   const [overlay, setOverlay] = useState<'stats' | 'settings' | null>(null);
@@ -62,6 +64,7 @@ function Root() {
   const [draftTouched, setDraftTouched] = useState<(keyof Draft)[]>([]); // fields the opener set on purpose
   const [viewId, setViewId] = useState<string | null>(null);
   const [todayPing, setTodayPing] = useState(0); // re-tapping the Today tab → jump to today
+  const [undo, setUndo] = useState<(UndoItem & { deleted: Deleted }) | null>(null); // the last deleted task, for a few seconds
 
   const [update, setUpdate] = useState<ReleaseInfo | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -267,11 +270,18 @@ function Root() {
       return null;
     });
   }, [saveDraft]);
+  // Delete from the editor: gone at once, with a few seconds to undo it (the
+  // calendar waits until then, so an undone delete never reaches it).
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const del = useCallback(() => {
-    setDraft((d) => {
-      if (d?.id) deleteTask(d.id);
-      return null;
-    });
+    const d = draftRef.current;
+    setDraft(null);
+    if (!d?.id) return;
+    const gone = deleteTask(d.id);
+    if (!gone) return;
+    holdCalendarSync(UNDO_MS + 400);
+    setUndo({ n: Date.now(), title: gone.task.title, emoji: gone.task.emoji, color: gone.task.color, deleted: gone });
   }, [deleteTask]);
 
   if (!loaded) return <View style={styles.bg} />;
@@ -376,6 +386,8 @@ function Root() {
         onDelete={del}
         onClose={() => setDraft(null)}
       />
+
+      <UndoBar item={undo} onUndo={() => undo && restoreTask(undo.deleted)} onClose={() => setUndo(null)} />
 
       <UpdateModal release={updateOpen ? update : null} currentVersion={curVer} onClose={() => setUpdateOpen(false)} />
 

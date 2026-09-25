@@ -816,6 +816,18 @@ export function applyOps(prev: Task[], ops: SyncOps): Task[] {
   return changed || fresh.length ? [...out, ...fresh] : prev;
 }
 
+/** The events the app itself put in the calendar (not the calendar's own, brought in as tasks). */
+export function appEvents(tasks: Task[], calendarId: string | null): Task[] {
+  return calendarId ? tasks.filter((t) => t.cal && t.cal.c === calendarId && !t.cal.from && !t.cal.master) : [];
+}
+
+/** Removes them from the calendar (e.g. when all data is deleted). Resolves to how many went. */
+export async function removeAppEvents(tasks: Task[], calendarId: string | null): Promise<number> {
+  let n = 0;
+  for (const t of appEvents(tasks, calendarId)) if (await Cal.remove(t.cal!.id).catch(() => false)) n++;
+  return n;
+}
+
 /** Switching calendars: the app's own events move along; tasks brought in from the old one go. */
 export function planSwitch(tasks: Task[], oldCal: string | null): { moving: Task[]; leaving: Task[] } {
   const moving: Task[] = [];
@@ -852,6 +864,12 @@ function setStatus(p: Partial<Status>) {
   listeners.forEach((l) => l(status));
 }
 let runner: ((opts?: { mass?: 'remove' | 'keep'; refresh?: boolean }) => void) | null = null;
+
+// While a change can still be undone (a deleted task), the calendar waits for it.
+let holdUntil = 0;
+export function holdCalendarSync(ms: number) {
+  holdUntil = Math.max(holdUntil, Date.now() + ms);
+}
 
 /** Sync now (e.g. "Sync now", or answering a held removal). */
 export function requestCalendarSync(opts?: { mass?: 'remove' | 'keep'; refresh?: boolean }) {
@@ -891,6 +909,7 @@ export function useCalendarSync(opts: { loaded: boolean; tasks: Task[]; settings
   const latest = useRef({ tasks, settings, apply });
   latest.current = { tasks, settings, apply };
   const running = useRef(false);
+  const held = useRef(false);
   const again = useRef<{ mass?: 'remove' | 'keep' } | null>(null);
   const sig = useRef<string | null>(null);
   const cfg = settings.calendar;
@@ -899,6 +918,17 @@ export function useCalendarSync(opts: { loaded: boolean; tasks: Task[]; settings
   const run = async (o: { mass?: 'remove' | 'keep'; refresh?: boolean } = {}) => {
     const { settings: s } = latest.current;
     if (!Cal.available || !s.calendar.on || !s.calendar.calendarId) return;
+    const wait = holdUntil - Date.now();
+    if (wait > 0) {
+      if (!held.current) {
+        held.current = true;
+        setTimeout(() => {
+          held.current = false;
+          runRef.current(o);
+        }, wait + 100);
+      }
+      return;
+    }
     if (running.current) {
       again.current = { mass: o.mass ?? again.current?.mass };
       return;

@@ -222,8 +222,11 @@ internal class AlarmView(
     column.addView(View(context), lp(h = 0, weight = 1.15f))
 
     // Snooze · Done
+    // (either can be turned off in Settings → Reminders; the slider always stays)
     buttons.orientation = LinearLayout.HORIZONTAL
-    buttons.addView(glassButton(R.drawable.operarius_ic_clock, "Snooze ${cfg.snoozeMin} min", Palette.TEXT_DIM) { act(Outro.SNOOZE) { listener.onSnooze() } }, LinearLayout.LayoutParams(0, dpi(56f), 1f))
+    if (cfg.snoozeButton) {
+      buttons.addView(glassButton(R.drawable.operarius_ic_clock, "Snooze ${cfg.snoozeMin} min", Palette.TEXT_DIM) { act(Outro.SNOOZE) { listener.onSnooze() } }, LinearLayout.LayoutParams(0, dpi(56f), 1f))
+    }
     // A task completes with its subtasks: while any are open, this opens the
     // task to tick them off instead of "Done".
     val finish = if (r.subsLeft > 0) {
@@ -231,8 +234,8 @@ internal class AlarmView(
     } else {
       glassButton(R.drawable.operarius_ic_check, "Done", Palette.ACCENT_B) { act(Outro.DONE) { listener.onDone() } }
     }
-    buttons.addView(finish, LinearLayout.LayoutParams(0, dpi(56f), 1f).apply { marginStart = dpi(12f) })
-    column.addView(buttons, lp(LinearLayout.LayoutParams.MATCH_PARENT))
+    if (cfg.doneButton) buttons.addView(finish, LinearLayout.LayoutParams(0, dpi(56f), 1f).apply { if (cfg.snoozeButton) marginStart = dpi(12f) })
+    if (cfg.snoozeButton || cfg.doneButton) column.addView(buttons, lp(LinearLayout.LayoutParams.MATCH_PARENT))
 
     column.addView(slider, lp(LinearLayout.LayoutParams.MATCH_PARENT, dpi(if (compact) 62f else 66f), top = 14f))
 

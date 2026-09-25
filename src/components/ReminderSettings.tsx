@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Native from '../../modules/reminders';
 import type { NativeReminder } from '../../modules/reminders';
 import { C } from '../theme';
 import { useApp } from '../store';
-import { ReminderIntensity } from '../types';
+import { ReminderIntensity, Tag } from '../types';
 import { fmt, hexA } from '../utils';
-import { afterLabel, beforeLabel, buildSchedule, fmtOffset, localMs, whenLabel } from '../reminders';
+import { afterLabel, beforeLabel, buildSchedule, fmtOffset, intensityFor, localMs, whenLabel } from '../reminders';
+import { CenterPopup } from './Overlay';
 import { Toggle } from './MotionSettings';
 import { CheckList, INTENSITIES, INTENSITY, IntensityPicker, reminderChecks, useReminderStatus } from './ReminderBits';
 import { Appear, Tappable } from './anim';
+import { sp } from '../motion';
 
 const BEFORE_CHOICES: (number | null)[] = [null, 0, 5, 10, 15, 30, 60];
 const SNOOZE_CHOICES = [5, 10, 15, 20, 30];
@@ -23,7 +26,21 @@ const TEST_DELAY = 5; // seconds
 // Settings → Reminders.
 // ---------------------------------------------------------------------------
 export function ReminderSettings() {
-  const { tasks, settings, updateSettings } = useApp();
+  const { tasks, settings, updateSettings, setTagIntensity } = useApp();
+  const [tagPick, setTagPick] = useState<string | null>(null);
+  // Tags in order: each top-level tag followed by its sub-tags.
+  const tagRows = useMemo(() => {
+    const out: Tag[] = [];
+    for (const t of settings.tags.filter((x) => !x.parentId)) {
+      out.push(t);
+      out.push(...settings.tags.filter((x) => x.parentId === t.id));
+    }
+    return out;
+  }, [settings.tags]);
+  const picked = tagPick ? settings.tags.find((t) => t.id === tagPick) ?? null : null;
+  const pickedParent = picked?.parentId ? settings.tags.find((t) => t.id === picked.parentId) ?? null : null;
+  // What a tag gets when it has none of its own: its parent's, or the default.
+  const inherited = (t: Tag) => intensityFor(settings, t.parentId ?? null);
   const { status, refresh } = useReminderStatus();
   const [soundName, setSoundName] = useState<string>(settings.alarmSound?.name ?? 'Default alarm');
   const [testing, setTesting] = useState<{ kind: ReminderIntensity; until: number } | null>(null);
@@ -136,6 +153,83 @@ export function ReminderSettings() {
       <IntensityPicker value={settings.reminderDefault.intensity} onChange={(v) => updateSettings({ reminderDefault: { ...settings.reminderDefault, intensity: v } })} />
       <Text style={styles.hint}>Used for tasks you create from now on — each task can change it in its Reminders.</Text>
 
+      {/* Per tag */}
+      {tagRows.length > 0 && (
+        <>
+          <Text style={styles.section}>BY TAG</Text>
+          <View style={[styles.card, { paddingVertical: 2 }]}>
+            {tagRows.map((t, i) => {
+              const own = t.intensity;
+              const eff = own ?? inherited(t);
+              const parent = t.parentId ? settings.tags.find((x) => x.id === t.parentId) : null;
+              const m = INTENSITY[eff];
+              return (
+                <Appear key={t.id} from="up" delay={30 + i * 22} distance={6}>
+                  <Tappable
+                    onPress={() => setTagPick(t.id)}
+                    scaleTo={0.98}
+                    style={[styles.tagRow, !!t.parentId && styles.tagRowSub, i < tagRows.length - 1 && styles.tagRowLine]}>
+                    {t.parentId ? (
+                      <View style={[styles.subDot, { borderColor: t.color }]}>{!!t.icon && <Text style={styles.subIcon}>{t.icon}</Text>}</View>
+                    ) : (
+                      <View style={[styles.tagDot, { backgroundColor: t.color }]} />
+                    )}
+                    <Text style={[styles.tagName, !!t.parentId && { fontWeight: '600', color: C.textDim }]} numberOfLines={1}>
+                      {t.name}
+                    </Text>
+                    {own ? (
+                      <View style={[styles.tagVal, { backgroundColor: hexA(m.color, 0.14) }]}>
+                        <Feather name={m.icon} size={12} color={m.color} />
+                        <Text style={[styles.tagValTxt, { color: m.color }]}>{m.label}</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.tagInherit} numberOfLines={1}>
+                        {parent ? `Like ${parent.name}` : 'Default'} · {m.label}
+                      </Text>
+                    )}
+                    <Feather name="chevron-right" size={16} color={C.faint} />
+                  </Tappable>
+                </Appear>
+              );
+            })}
+          </View>
+          <Text style={styles.hint}>Reminders of a task with the tag start this way. A sub-tag follows its tag unless it has its own.</Text>
+        </>
+      )}
+
+      <CenterPopup open={!!picked} onClose={() => setTagPick(null)}>
+        {picked && (
+          <>
+            <View style={styles.popHead}>
+              <View style={[styles.popDot, { backgroundColor: picked.color }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.popTitle} numberOfLines={1}>
+                  {picked.name}
+                </Text>
+                <Text style={styles.popSub}>{pickedParent ? `Sub-tag of ${pickedParent.name}` : 'Reminders of its tasks start as…'}</Text>
+              </View>
+            </View>
+            <Tappable
+              onPress={() => setTagIntensity(picked.id, null)}
+              scaleTo={0.98}
+              style={[styles.inheritRow, !picked.intensity && { backgroundColor: 'rgba(79,209,197,0.1)', boxShadow: 'inset 0 0 0 1px rgba(79,209,197,0.4)' }]}>
+              <View style={[styles.radio, { borderColor: !picked.intensity ? C.accentB : 'rgba(255,255,255,0.25)' }]}>{!picked.intensity && <Appear from="pop" style={styles.radioDot} />}</View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inheritTitle}>{pickedParent ? `Like ${pickedParent.name}` : 'The default'}</Text>
+                <Text style={styles.inheritSub}>
+                  {INTENSITY[inherited(picked)].label} — {pickedParent ? 'follows its tag' : 'as set for new tasks above'}
+                </Text>
+              </View>
+            </Tappable>
+            <Text style={[styles.label, { marginTop: 14 }]}>Or its own</Text>
+            <IntensityPicker value={picked.intensity ?? inherited(picked)} onChange={(v) => setTagIntensity(picked.id, v)} />
+            <Tappable style={styles.popDone} onPress={() => setTagPick(null)}>
+              <Text style={styles.popDoneTxt}>Done</Text>
+            </Tappable>
+          </>
+        )}
+      </CenterPopup>
+
       {/* Alarms */}
       <Text style={styles.section}>WHEN IT RINGS</Text>
       <Text style={styles.label}>Snooze for</Text>
@@ -180,6 +274,35 @@ export function ReminderSettings() {
       </View>
       <Text style={styles.hint}>Press a volume key on the reminder screen to silence the alarm but keep the reminder up.</Text>
 
+      {/* The full-screen reminder's buttons */}
+      <Text style={styles.section}>ON THE FULL-SCREEN REMINDER</Text>
+      <View style={[styles.card, { paddingVertical: 4 }]}>
+        <ButtonsPreview snooze={settings.alarmSnoozeBtn} done={settings.alarmDoneBtn} snoozeMin={settings.snoozeMin} />
+        <View style={[styles.divider, { marginLeft: 0 }]} />
+        <View style={styles.optRow}>
+          <View style={styles.optIcon}>
+            <Feather name="clock" size={15} color={C.accentB} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.optTitle}>Snooze button</Text>
+            <Text style={styles.optSub}>{settings.alarmSnoozeBtn ? `Snoozes for ${settings.snoozeMin} min` : 'Hidden'}</Text>
+          </View>
+          <Toggle value={settings.alarmSnoozeBtn} onChange={(v) => updateSettings({ alarmSnoozeBtn: v })} />
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.optRow}>
+          <View style={styles.optIcon}>
+            <Feather name="check" size={15} color={C.accentB} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.optTitle}>Done button</Text>
+            <Text style={styles.optSub}>{settings.alarmDoneBtn ? 'Ticks the task off' : 'Hidden'}</Text>
+          </View>
+          <Toggle value={settings.alarmDoneBtn} onChange={(v) => updateSettings({ alarmDoneBtn: v })} />
+        </View>
+      </View>
+      <Text style={styles.hint}>The reminder can always be slid away, and “Open task” below it opens the task.</Text>
+
       {/* Reliability */}
       {Native.available && status && (
         <>
@@ -219,6 +342,48 @@ export function ReminderSettings() {
           </View>
         </>
       )}
+    </View>
+  );
+}
+
+// The reminder's button row as it will look: a switched-off button folds away
+// and the other takes the room; the slider is always there.
+function ButtonsPreview({ snooze, done, snoozeMin }: { snooze: boolean; done: boolean; snoozeMin: number }) {
+  const a = useSharedValue(snooze ? 1 : 0);
+  const b = useSharedValue(done ? 1 : 0);
+  useEffect(() => {
+    a.value = withSpring(snooze ? 1 : 0, sp({ damping: 18, stiffness: 220 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snooze]);
+  useEffect(() => {
+    b.value = withSpring(done ? 1 : 0, sp({ damping: 18, stiffness: 220 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
+  const row = useAnimatedStyle(() => ({ height: 40 * Math.min(1, Math.max(a.value, b.value)) + 0.01, marginBottom: 8 * Math.min(1, Math.max(a.value, b.value)) }));
+  const left = useAnimatedStyle(() => ({ flex: Math.max(0.0001, a.value), opacity: a.value, transform: [{ scale: 0.8 + 0.2 * a.value }] }));
+  const right = useAnimatedStyle(() => ({ flex: Math.max(0.0001, b.value), opacity: b.value, marginLeft: 8 * Math.min(a.value, b.value), transform: [{ scale: 0.8 + 0.2 * b.value }] }));
+  return (
+    <View style={styles.pv}>
+      <Animated.View style={[styles.pvRow, row]}>
+        <Animated.View style={[styles.pvBtn, left]}>
+          <Feather name="clock" size={13} color={C.textDim} />
+          <Text style={styles.pvBtnTxt} numberOfLines={1}>
+            Snooze {snoozeMin} min
+          </Text>
+        </Animated.View>
+        <Animated.View style={[styles.pvBtn, right]}>
+          <Feather name="check" size={13} color={C.accentB} />
+          <Text style={styles.pvBtnTxt} numberOfLines={1}>
+            Done
+          </Text>
+        </Animated.View>
+      </Animated.View>
+      <View style={styles.pvSlider}>
+        <View style={styles.pvKnob}>
+          <Feather name="chevrons-right" size={14} color="#0b0b0d" />
+        </View>
+        <Text style={styles.pvSliderTxt}>Slide to dismiss</Text>
+      </View>
     </View>
   );
 }
@@ -298,6 +463,34 @@ const styles = StyleSheet.create({
   optTitle: { fontSize: 14.5, fontWeight: '700', color: C.text },
   optSub: { fontSize: 12, color: C.muted, marginTop: 2 },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginLeft: 44 },
+  pv: { paddingVertical: 12, paddingHorizontal: 2 },
+  tagRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 2 },
+  tagRowSub: { paddingLeft: 22 },
+  tagRowLine: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  tagDot: { width: 12, height: 12, borderRadius: 6 },
+  subDot: { width: 18, height: 18, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  subIcon: { fontSize: 10 },
+  tagName: { flex: 1, fontSize: 14.5, fontWeight: '700', color: C.text },
+  tagVal: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, height: 26, borderRadius: 9 },
+  tagValTxt: { fontSize: 12, fontWeight: '800' },
+  tagInherit: { flexShrink: 1, fontSize: 12.5, fontWeight: '600', color: C.muted },
+  popHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  popDot: { width: 16, height: 16, borderRadius: 8 },
+  popTitle: { fontSize: 17, fontWeight: '800', color: C.text },
+  popSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
+  inheritRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)' },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.accentB },
+  inheritTitle: { fontSize: 14.5, fontWeight: '800', color: C.text },
+  inheritSub: { fontSize: 12, color: C.muted, marginTop: 2 },
+  popDone: { height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  popDoneTxt: { fontSize: 15, fontWeight: '700', color: C.text },
+  pvRow: { flexDirection: 'row', overflow: 'hidden' },
+  pvBtn: { height: 40, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.07)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.1)' },
+  pvBtnTxt: { fontSize: 12.5, fontWeight: '800', color: C.text },
+  pvSlider: { height: 40, borderRadius: 20, flexDirection: 'row', alignItems: 'center', padding: 4, backgroundColor: 'rgba(255,255,255,0.05)' },
+  pvKnob: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accentB },
+  pvSliderTxt: { flex: 1, textAlign: 'center', marginRight: 32, fontSize: 12.5, fontWeight: '700', color: C.muted },
   summary: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16 },
   summaryOk: { backgroundColor: 'rgba(79,209,197,0.08)', boxShadow: 'inset 0 0 0 1px rgba(79,209,197,0.25)' },
   summaryWarn: { backgroundColor: 'rgba(245,161,92,0.08)', boxShadow: 'inset 0 0 0 1px rgba(245,161,92,0.3)' },

@@ -59,7 +59,7 @@ export function ReminderPopup({
   if (draft) dRef.current = draft;
   const d = draft ?? dRef.current;
 
-  const cur: Reminders = d?.reminders ?? blankReminders(settings);
+  const cur: Reminders = d?.reminders ?? blankReminders(settings, d?.tagId);
   const timed = d ? hasTime(d.type) : false;
   const win = d ? taskWindow(d, settings) : null;
   const on = hasReminders(cur);

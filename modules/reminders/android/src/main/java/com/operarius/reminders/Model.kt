@@ -101,6 +101,9 @@ data class Config(
   val clock24: Boolean = true,
   /** The app's animation scale; 0 = animations off. */
   val animScale: Float = 1f,
+  /** Which buttons the full-screen reminder shows (it can always be slid away). */
+  val snoozeButton: Boolean = true,
+  val doneButton: Boolean = true,
 ) {
   fun toJson(): JSONObject = JSONObject()
     .put("enabled", enabled)
@@ -112,6 +115,8 @@ data class Config(
     .put("gentle", gentle)
     .put("clock24", clock24)
     .put("animScale", animScale.toDouble())
+    .put("snoozeButton", snoozeButton)
+    .put("doneButton", doneButton)
 
   companion object {
     fun fromJson(o: JSONObject?): Config {
@@ -126,6 +131,8 @@ data class Config(
         gentle = o.optBoolean("gentle", true),
         clock24 = o.optBoolean("clock24", true),
         animScale = o.optDouble("animScale", 1.0).toFloat().coerceIn(0f, 4f),
+        snoozeButton = o.optBoolean("snoozeButton", true),
+        doneButton = o.optBoolean("doneButton", true),
       )
     }
   }
@@ -179,6 +186,8 @@ class ConfigRecord : Record {
   @Field val gentle: Boolean = true
   @Field val clock24: Boolean = true
   @Field val animScale: Double = 1.0
+  @Field val snoozeButton: Boolean = true
+  @Field val doneButton: Boolean = true
 
   fun toConfig() = Config(
     enabled = enabled,
@@ -190,5 +199,7 @@ class ConfigRecord : Record {
     gentle = gentle,
     clock24 = clock24,
     animScale = animScale.toFloat().coerceIn(0f, 4f),
+    snoozeButton = snoozeButton,
+    doneButton = doneButton,
   )
 }

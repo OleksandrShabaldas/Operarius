@@ -81,6 +81,8 @@ export const DEFAULT_SETTINGS: Settings = {
   alarmSound: null,
   alarmVibrate: true,
   alarmGentle: true,
+  alarmSnoozeBtn: true,
+  alarmDoneBtn: true,
   calendar: DEFAULT_CALENDAR,
   lastBackup: null,
 };
@@ -272,6 +274,7 @@ export function parseSettings(raw: unknown): Settings {
     tags: (Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS).map((t: Tag) => ({
       ...t,
       color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
+      intensity: isIntensity(t.intensity) ? t.intensity : undefined,
     })),
     places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
     timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
@@ -294,6 +297,8 @@ export function parseSettings(raw: unknown): Settings {
         : null,
     alarmVibrate: typeof parsed.alarmVibrate === 'boolean' ? parsed.alarmVibrate : true,
     alarmGentle: typeof parsed.alarmGentle === 'boolean' ? parsed.alarmGentle : true,
+    alarmSnoozeBtn: typeof parsed.alarmSnoozeBtn === 'boolean' ? parsed.alarmSnoozeBtn : true,
+    alarmDoneBtn: typeof parsed.alarmDoneBtn === 'boolean' ? parsed.alarmDoneBtn : true,
     calendar: migrateCalendar(parsed.calendar),
     lastBackup:
       parsed.lastBackup && typeof parsed.lastBackup.at === 'number' && typeof parsed.lastBackup.name === 'string' ? { at: parsed.lastBackup.at, name: parsed.lastBackup.name } : null,

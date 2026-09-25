@@ -99,7 +99,9 @@ export type Clock = '12h' | '24h';
 // `hideDots` keeps the tag's tasks (and, for a top-level tag, its sub-tags'
 // tasks) out of the week strip's per-task dots. Sub-tags share their parent's
 // colour, so they can carry an `icon` (emoji / 2 letters) to tell them apart.
-export type Tag = { id: string; name: string; parentId: string | null; color: string; hideDots?: boolean; icon?: string };
+// `intensity`: how reminders of the tag's tasks start (a sub-tag without one
+// follows its parent; no tag → Settings → Reminders' default).
+export type Tag = { id: string; name: string; parentId: string | null; color: string; hideDots?: boolean; icon?: string; intensity?: ReminderIntensity };
 
 // User-defined place. May belong to a (top-level) tag, carry a location picked
 // on Google Maps, and hold a photo.
@@ -143,6 +145,8 @@ export type Settings = {
   alarmSound: { uri: string; name: string } | null; // null = the phone's default alarm sound
   alarmVibrate: boolean; // intense alarms vibrate in pulses
   alarmGentle: boolean; // intense alarms fade in instead of starting at full volume
+  alarmSnoozeBtn: boolean; // the full-screen reminder shows Snooze
+  alarmDoneBtn: boolean; // …and Done (it can always be slid away)
   calendar: CalendarSync;
   lastBackup: { at: number; name: string } | null; // the last export
 };

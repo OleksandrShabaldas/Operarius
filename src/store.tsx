@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CalendarSync, Draft, PlaceLocation, Settings, Task } from './types';
-import { DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
+import { CalendarSync, Draft, PlaceLocation, ReminderIntensity, Settings, Task } from './types';
+import { DEFAULT_CALENDAR, DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
 import { COLORS } from './theme';
 import { expandForDay, parseId } from './recurrence';
 import { genId, todayKey } from './utils';
@@ -8,6 +8,7 @@ import { applyOps, SyncOps } from './calendarSync';
 import { Backup, restorePhotos } from './backup';
 
 export type Snapshot = { tasks: Task[]; settings: Settings };
+export type Deleted = { task: Task; index: number };
 export type ImportResult = { tasks: number; tags: number; places: number };
 
 type Ctx = {
@@ -16,7 +17,8 @@ type Ctx = {
   settings: Settings;
   tasksForDay: (dateKey: string) => Task[];
   saveDraft: (draft: Draft) => void; // add when no id, else update
-  deleteTask: (id: string) => void;
+  deleteTask: (id: string) => Deleted | null; // what was removed (to undo it)
+  restoreTask: (d: Deleted) => void; // undo a delete
   toggleDone: (id: string) => void;
   setDone: (id: string, done: boolean) => void; // e.g. "Done" pressed on a reminder
   toggleSubtask: (taskId: string, subId: string) => void;
@@ -28,6 +30,7 @@ type Ctx = {
   applyCalendarSync: (ops: SyncOps, patch: Partial<CalendarSync>) => void; // a sync's changes to the tasks + its state
   importBackup: (b: Backup, mode: 'replace' | 'merge') => ImportResult; // restore a backup (replace everything / add what's missing)
   restoreSnapshot: (s: Snapshot) => void; // undo a restore
+  resetAll: () => Snapshot; // delete all data: back to a fresh install (returns what was there, to undo)
   clearCompleted: (dateKey?: string) => void; // all days if omitted
   clearDay: (dateKey: string) => void;
   clearAll: () => void;
@@ -37,6 +40,7 @@ type Ctx = {
   setTagColor: (id: string, color: string) => void;
   setTagHideDots: (id: string, hide: boolean) => void; // keep the tag's tasks out of the week-strip dots
   setTagIcon: (id: string, icon: string | null) => void; // sub-tag icon (null = none)
+  setTagIntensity: (id: string, intensity: ReminderIntensity | null) => void; // how its tasks' reminders start (null = the default / its parent's)
   deleteTag: (id: string) => void;
   addPlace: (name: string, tagId?: string | null) => void;
   renamePlace: (id: string, name: string) => void;
@@ -133,9 +137,18 @@ export function AppProvider({
     });
   }, []);
 
-  const deleteTask = useCallback((id: string) => {
+  const deleteTask = useCallback((id: string): Deleted | null => {
     const { baseId } = parseId(id);
+    const index = tasksRef.current.findIndex((t) => t.id === baseId);
+    if (index < 0) return null;
+    const task = tasksRef.current[index];
     setTasks((prev) => prev.filter((t) => t.id !== baseId));
+    return { task, index };
+  }, []);
+
+  // Put a deleted task back where it was (same id, links and history).
+  const restoreTask = useCallback(({ task, index }: Deleted) => {
+    setTasks((prev) => (prev.some((t) => t.id === task.id) ? prev : [...prev.slice(0, index), task, ...prev.slice(index)]));
   }, []);
 
   // Toggle completion — per-occurrence (doneDates) for a repeating instance.
@@ -270,6 +283,13 @@ export function AppProvider({
     setSettings(s.settings);
   }, []);
 
+  const resetAll = useCallback((): Snapshot => {
+    const before = { tasks: tasksRef.current, settings: settingsRef.current };
+    setTasks([]);
+    setSettings({ ...DEFAULT_SETTINGS, calendar: { ...DEFAULT_CALENDAR } });
+    return before;
+  }, []);
+
   const clearCompleted = useCallback((dateKey?: string) => {
     setTasks((prev) => prev.filter((t) => !(t.done && (dateKey ? t.date === dateKey : true))));
   }, []);
@@ -308,6 +328,10 @@ export function AppProvider({
 
   const setTagIcon = useCallback((id: string, icon: string | null) => {
     setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, icon: icon || undefined } : t)) }));
+  }, []);
+
+  const setTagIntensity = useCallback((id: string, intensity: ReminderIntensity | null) => {
+    setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, intensity: intensity ?? undefined } : t)) }));
   }, []);
 
   const deleteTag = useCallback((id: string) => {
@@ -360,6 +384,7 @@ export function AppProvider({
     tasksForDay,
     saveDraft,
     deleteTask,
+    restoreTask,
     toggleDone,
     setDone,
     toggleSubtask,
@@ -371,6 +396,7 @@ export function AppProvider({
     applyCalendarSync,
     importBackup,
     restoreSnapshot,
+    resetAll,
     clearCompleted,
     clearDay,
     clearAll,
@@ -379,6 +405,7 @@ export function AppProvider({
     setTagColor,
     setTagHideDots,
     setTagIcon,
+    setTagIntensity,
     deleteTag,
     addPlace,
     renamePlace,

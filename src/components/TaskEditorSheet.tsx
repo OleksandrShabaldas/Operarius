@@ -10,7 +10,8 @@ import { C } from '../theme';
 import { ms, sp } from '../motion';
 import { Clock, Draft, Place, Preset, Reminders, Tag, Task, TaskType } from '../types';
 import { dateHint, dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, tagLabel, todayKey } from '../utils';
-import { carryReminders, reminderSummary } from '../reminders';
+import { carryReminders, intensityFor, reminderSummary } from '../reminders';
+import { useApp } from '../store';
 import { ReminderPopup } from './ReminderPopup';
 import { INTENSITY } from './ReminderBits';
 import { CustomColorGrid, CustomIconInput, IconGrid, PaletteRow } from './ColorIcon';
@@ -91,6 +92,7 @@ export function TaskEditorSheet({
   const focusSub = useRef<string | null>(null);
   // Fields changed by hand in this editing session.
   const touched = useRef<Set<keyof Draft>>(new Set());
+  const { settings: appSettings } = useApp(); // (tag → reminder intensity)
 
   useEffect(() => {
     setIconPage('main');
@@ -585,7 +587,12 @@ export function TaskEditorSheet({
         usage={tagUsage}
         taskTitle={d?.title ?? ''}
         taskColor={d?.color ?? C.accentA}
-        onSelect={(id) => patch({ tagId: id })}
+        onSelect={(id) => {
+          // Reminders still at the old tag's intensity take on the new tag's.
+          const r = d?.reminders;
+          if (r && r.intensity === intensityFor(appSettings, d?.tagId)) patch({ tagId: id, reminders: { ...r, intensity: intensityFor(appSettings, id) } });
+          else patch({ tagId: id });
+        }}
         onClose={() => setPicker(null)}
       />
       <PlaceSelectPopup

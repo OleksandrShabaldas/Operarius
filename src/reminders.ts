@@ -45,13 +45,21 @@ export const hasReminders = (r: Reminders | null | undefined): r is Reminders =>
 /** Collapses an empty set to null (the stored "no reminders"). */
 export const tidyReminders = (r: Reminders | null): Reminders | null => (hasReminders(r) ? r : null);
 
-/** A blank set, with the user's default intensity. */
-export const blankReminders = (s: Settings): Reminders => ({ before: null, after: null, custom: [], intensity: s.reminderDefault.intensity });
+/** How a task's reminders start: its tag's intensity, its parent tag's, or the default. */
+export function intensityFor(s: Pick<Settings, 'tags' | 'reminderDefault'>, tagId: string | null | undefined): ReminderIntensity {
+  const tag = tagId ? s.tags.find((t) => t.id === tagId) : null;
+  if (tag?.intensity) return tag.intensity;
+  const parent = tag?.parentId ? s.tags.find((t) => t.id === tag.parentId) : null;
+  return parent?.intensity ?? s.reminderDefault.intensity;
+}
+
+/** A blank set, at the intensity its tag (or the default) asks for. */
+export const blankReminders = (s: Settings, tagId?: string | null): Reminders => ({ before: null, after: null, custom: [], intensity: intensityFor(s, tagId) });
 
 /** What a brand-new task starts with (Settings → Reminders → New tasks). */
-export function defaultReminders(s: Settings): Reminders | null {
+export function defaultReminders(s: Settings, tagId?: string | null): Reminders | null {
   const b = s.reminderDefault.before;
-  return b == null ? null : { before: b, after: null, custom: [], intensity: s.reminderDefault.intensity };
+  return b == null ? null : { before: b, after: null, custom: [], intensity: intensityFor(s, tagId) };
 }
 
 /** Reminders carried into a copy / from a name suggestion: the relative ones, plus custom ones still ahead. */
@@ -238,6 +246,8 @@ export function nativeConfig(s: Settings): NativeConfig {
     gentle: s.alarmGentle,
     clock24: s.clock === '24h',
     animScale: s.animations ? 1 / s.animSpeed : 0, // the native screen scales durations
+    snoozeButton: s.alarmSnoozeBtn,
+    doneButton: s.alarmDoneBtn,
   };
 }
 

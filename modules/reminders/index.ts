@@ -41,6 +41,8 @@ export type NativeConfig = {
   gentle: boolean;
   clock24: boolean;
   animScale: number; // the app's animation scale (0 = animations off)
+  snoozeButton: boolean; // the full-screen reminder's buttons (it can always be slid away)
+  doneButton: boolean;
 };
 
 // Everything that decides whether a reminder can arrive on time.

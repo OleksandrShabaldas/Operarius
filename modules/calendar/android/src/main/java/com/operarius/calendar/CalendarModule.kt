@@ -25,6 +25,9 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 
 /** What the app writes into an event (or into one occurrence of a recurring event). */
@@ -251,19 +254,38 @@ class CalendarModule : Module() {
       ContentUris.parseId(uri).toString()
     }
 
-    // Drop one occurrence of a recurring event.
+    // Drop one occurrence of a recurring event: its start joins the series'
+    // EXDATE, and a changed occurrence's own event goes. (Not a cancelled
+    // exception event: for a series with no sync id yet — a phone-only
+    // calendar, or one not uploaded yet — the Calendar Provider then drops all
+    // the series' other occurrences too.) Throws when the calendar refuses, so
+    // the cancellation is tried again.
     AsyncFunction("cancelOccurrence") { masterId: String, originalBegin: Double, exceptionId: String? ->
-      if (!granted()) return@AsyncFunction false
+      if (!granted()) throw Exceptions.MissingPermissions(Manifest.permission.WRITE_CALENDAR)
+      val master = masterId.toLongOrNull() ?: return@AsyncFunction false
+      val uri = ContentUris.withAppendedId(Events.CONTENT_URI, master)
+      val proj = arrayOf(Events.DTSTART, Events.DURATION, Events.RRULE, Events.EVENT_TIMEZONE, Events.ALL_DAY, Events.EXDATE, Events.DELETED)
+      val done = resolver.query(uri, proj, null, null, null)?.use { cur ->
+        // The series is gone (or no longer repeats): so is the occurrence.
+        if (!cur.moveToFirst() || cur.getInt(6) == 1 || cur.isNull(2)) return@use true
+        val stamp = exdateStamp(originalBegin.toLong(), cur.getInt(4) == 1)
+        val old = cur.getString(5)?.takeIf { it.isNotBlank() }
+        if (old != null && old.contains(stamp)) return@use true
+        val values = ContentValues().apply {
+          // One entry per line (each may carry its own time zone).
+          put(Events.EXDATE, if (old == null) stamp else "$old\n$stamp")
+          // The provider lays a series' occurrences out again only when its timing is written.
+          put(Events.DTSTART, cur.getLong(0))
+          if (!cur.isNull(1)) put(Events.DURATION, cur.getString(1))
+          put(Events.RRULE, cur.getString(2))
+          if (!cur.isNull(3)) put(Events.EVENT_TIMEZONE, cur.getString(3))
+        }
+        resolver.update(uri, values, null, null) > 0
+      } ?: false
+      if (!done) throw IllegalStateException("The calendar didn't take the change")
       val existing = exceptionId?.toLongOrNull()
-      if (existing != null && existing != masterId.toLongOrNull() && alive(existing)) {
-        val values = ContentValues().apply { put(Events.STATUS, Events.STATUS_CANCELED) }
-        if (resolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, existing), values, null, null) > 0) return@AsyncFunction true
-      }
-      val values = ContentValues().apply {
-        put(Events.ORIGINAL_INSTANCE_TIME, originalBegin.toLong())
-        put(Events.STATUS, Events.STATUS_CANCELED)
-      }
-      resolver.insert(ContentUris.withAppendedId(Events.CONTENT_EXCEPTION_URI, masterId.toLong()), values) != null
+      if (existing != null && existing != master && alive(existing)) resolver.delete(ContentUris.withAppendedId(Events.CONTENT_URI, existing), null, null)
+      true
     }
 
     // Ask the calendar's account to sync with its server now (Google), so
@@ -403,6 +425,10 @@ class CalendarModule : Module() {
 
   private fun duration(start: Long, end: Long, allDay: Boolean) =
     if (allDay) "P${maxOf(1L, (end - start + 43_200_000L) / 86_400_000L)}D" else "P${maxOf(60L, (end - start) / 1000L)}S"
+
+  // An occurrence's start as an EXDATE entry: a UTC date-time, or the date of an all-day one.
+  private fun exdateStamp(begin: Long, allDay: Boolean): String =
+    SimpleDateFormat(if (allDay) "yyyyMMdd" else "yyyyMMdd'T'HHmmss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(begin))
 
   // The app's own events carry its package (and a link to their task), so
   // they're never mistaken for the calendar's own events.

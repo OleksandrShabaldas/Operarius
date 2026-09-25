@@ -117,6 +117,18 @@ export function readBackup(raw: any): Backup {
   };
 }
 
+/** Deletes stored place photos that no place uses any more (after all data was deleted). */
+export function cleanupPhotos(keep: { photoUri: string | null }[]) {
+  try {
+    const dir = new Directory(Paths.document, 'places');
+    if (!dir.exists) return;
+    const used = new Set(keep.map((p) => p.photoUri).filter(Boolean));
+    for (const item of dir.list()) if (item instanceof File && !used.has(item.uri)) item.delete();
+  } catch {
+    // best effort
+  }
+}
+
 /** Writes the backup's place photos into the app's storage (only for `ids`, when given). */
 export function restorePhotos(b: Backup, ids?: Set<string>): Settings {
   const places = b.settings.places.map((p) => {

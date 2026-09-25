@@ -1,22 +1,43 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeOut, interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { cancelAnimation, Easing, FadeOut, interpolateColor, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { C } from '../theme';
-import { ms, sp } from '../motion';
+import { motion, ms, sp } from '../motion';
 import { Snapshot, useApp } from '../store';
 import { dateKey, dateLabel, fmt, hexA } from '../utils';
-import { Backup, BackupError, backupName, buildBackup, countsOf, pickBackup, saveFile, share } from '../backup';
+import { Backup, BackupError, backupName, buildBackup, cleanupPhotos, countsOf, pickBackup, saveFile, share } from '../backup';
+import { appEvents, removeAppEvents } from '../calendarSync';
+import { Task } from '../types';
 import { currentVersion } from '../updater';
 import { CenterPopup } from './Overlay';
 import { Appear, stagger, Tappable } from './anim';
 
 type Icon = keyof typeof Feather.glyphMap;
-type Note = { kind: 'ok' | 'err'; title: string; sub?: string; undo?: Snapshot; id: number };
+// `undone`: what the note says once its undo is tapped.
+type Note = { kind: 'ok' | 'err'; title: string; sub?: string; undo?: Snapshot; undone?: string; id: number };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+const HOLD_MS = 1400; // "Delete all data" is pressed and held this long
+
+// A snapshot to bring back after the app's own calendar events were removed:
+// those tasks go back unlinked (sync writes them anew) and sync forgets it had
+// seen those events. Everything else it remembers stays — an occurrence
+// deleted here earlier stays deleted, rather than coming back as a new task.
+function unlinkRemoved(s: Snapshot): Snapshot {
+  const gone = new Set<string>();
+  const tasks = s.tasks.map((t) => {
+    if (!t.cal || t.cal.from || t.cal.master) return t;
+    gone.add(t.cal.key);
+    const { cal: _gone, ...rest } = t;
+    return rest as Task;
+  });
+  const cal = s.settings.calendar;
+  return { tasks, settings: { ...s.settings, calendar: { ...cal, seen: cal.seen.filter((e) => !gone.has(e.k)) } } };
+}
 
 function when(iso: string | number, clock: '12h' | '24h'): string {
   const d = new Date(iso);
@@ -45,21 +66,54 @@ function age(at: number, now = Date.now()): string {
 // Settings → Data & backup.
 // ---------------------------------------------------------------------------
 export function DataSettings() {
-  const { tasks, settings, updateSettings, importBackup, restoreSnapshot, clearCompleted, clearAll } = useApp();
+  const { tasks, settings, updateSettings, importBackup, restoreSnapshot, resetAll, clearCompleted, clearAll } = useApp();
   const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState<'build' | 'save' | 'share' | 'read' | null>(null);
   const [incoming, setIncoming] = useState<Backup | null>(null);
   const [mode, setMode] = useState<'replace' | 'merge'>('replace');
   const [note, setNote] = useState<Note | null>(null);
+  const [wiping, setWiping] = useState(false);
+  const [alsoEvents, setAlsoEvents] = useState(false);
+  // After "Delete all data" the old place photos stay on disk while it can be
+  // undone, and go once it can't.
+  const purge = useRef(false);
+  const flushPurge = () => {
+    if (!purge.current) return;
+    purge.current = false;
+    cleanupPhotos([]);
+  };
 
   // A result note fades after a while (an undo stays up longer).
   useEffect(() => {
-    if (!note) return;
+    if (!note) {
+      flushPurge();
+      return;
+    }
     const t = setTimeout(() => setNote(null), note.undo ? 30000 : 7000);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
+  useEffect(() => () => flushPurge(), []);
 
   const counts = countsOf(tasks, settings);
+  const cal = settings.calendar;
+  const ownEvents = cal.on && cal.direction !== 'fromCalendar' ? appEvents(tasks, cal.calendarId).length : 0;
+
+  const wipe = async () => {
+    const removed = alsoEvents && ownEvents ? await removeAppEvents(tasks, cal.calendarId) : 0;
+    const before = resetAll();
+    setWiping(false);
+    purge.current = true;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    setNote({
+      kind: 'ok',
+      title: 'All data deleted',
+      sub: removed ? `A fresh start — and ${plural(removed, 'event')} removed from “${cal.calendarName}”.` : 'Operarius is back to a fresh start.',
+      undone: removed ? `Your data is back as it was, and its events are going back to “${cal.calendarName}”.` : undefined,
+      undo: removed ? unlinkRemoved(before) : before,
+      id: Date.now(),
+    });
+  };
   const last = settings.lastBackup;
   const stale = !last || Date.now() - last.at > 30 * 86400000;
 
@@ -146,9 +200,10 @@ export function DataSettings() {
           {note.undo ? (
             <Tappable
               onPress={() => {
+                purge.current = false;
                 restoreSnapshot(note.undo!);
                 Haptics.selectionAsync().catch(() => {});
-                setNote({ kind: 'ok', title: 'Undone', sub: 'Your data is back as it was.', id: Date.now() });
+                setNote({ kind: 'ok', title: 'Undone', sub: note.undone ?? 'Your data is back as it was.', id: Date.now() });
               }}
               style={styles.undo}>
               <Feather name="rotate-ccw" size={13} color={C.accentB} />
@@ -222,6 +277,66 @@ export function DataSettings() {
           <Feather name="chevron-right" size={20} color={C.danger} />
         </Tappable>
       </Appear>
+      <Appear from="up" delay={220}>
+        <Tappable
+          style={[styles.rowBtn, styles.rowDanger]}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setAlsoEvents(false);
+            setWiping(true);
+          }}>
+          <Feather name="alert-octagon" size={16} color={C.danger} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.rowBtnTxt, { color: C.danger }]}>Delete all data</Text>
+            <Text style={styles.rowSub}>Tasks, tags, places, settings — a fresh start</Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={C.danger} />
+        </Tappable>
+      </Appear>
+
+      {/* Delete all data: what goes, and a press-and-hold to be sure */}
+      <CenterPopup open={wiping} onClose={() => setWiping(false)}>
+        <Appear from="pop" style={[styles.popIcon, { backgroundColor: hexA(C.danger, 0.16) }]}>
+          <Feather name="alert-octagon" size={22} color={C.danger} />
+        </Appear>
+        <Text style={styles.popTitle}>Delete all data?</Text>
+        <Text style={styles.popSub}>Every task, tag, place and setting goes. Operarius starts fresh, as on the day you installed it.</Text>
+        <View style={[styles.inside, styles.insidePop]}>
+          <Count icon="check-square" n={counts.tasks} label="task" delay={40} />
+          <Count icon="tag" n={counts.tags} label="tag" delay={70} />
+          <Count icon="map-pin" n={counts.places} label="place" delay={100} />
+          <Count icon="image" n={counts.photos} label="photo" delay={130} />
+        </View>
+        {ownEvents > 0 && (
+          <CheckRow
+            on={alsoEvents}
+            onToggle={() => setAlsoEvents((v) => !v)}
+            title={`Also remove ${plural(ownEvents, 'event')} from “${cal.calendarName}”`}
+            sub="The ones Operarius added. Events of the calendar itself stay."
+            delay={150}
+          />
+        )}
+        {(!settings.lastBackup || Date.now() - settings.lastBackup.at > 86400000) && counts.tasks > 0 && (
+          <Appear from="up" delay={180} style={styles.popNote}>
+            <Feather name="archive" size={13} color="#f5a15c" />
+            <Text style={styles.popNoteTxt}>
+              Want a copy first?{' '}
+              <Text
+                style={styles.inlineLink}
+                onPress={() => {
+                  setWiping(false);
+                  setTimeout(() => setExporting(true), ms(340));
+                }}>
+                Export a backup
+              </Text>
+            </Text>
+          </Appear>
+        )}
+        <HoldButton label="Hold to delete everything" onDone={wipe} />
+        <Tappable style={styles.popCancel} onPress={() => setWiping(false)}>
+          <Text style={styles.popCancelTxt}>Cancel</Text>
+        </Tappable>
+      </CenterPopup>
 
       {/* Export: where to */}
       <CenterPopup open={exporting} onClose={() => !busy && setExporting(false)}>
@@ -292,6 +407,83 @@ export function DataSettings() {
         )}
       </CenterPopup>
     </View>
+  );
+}
+
+// Press and hold to confirm: the fill runs across; letting go early rolls it back.
+function HoldButton({ label, onDone }: { label: string; onDone: () => void }) {
+  const p = useSharedValue(0);
+  const [holding, setHolding] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const start = () => {
+    setHolding(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    cancelAnimation(p);
+    // Real time, whatever the animation speed — it's how sure you are.
+    p.value = motion.enabled ? withTiming(1, { duration: HOLD_MS, easing: Easing.linear }) : 1;
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+      onDone();
+    }, HOLD_MS);
+  };
+  const stop = () => {
+    setHolding(false);
+    if (!timer.current) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+    cancelAnimation(p);
+    p.value = withTiming(0, { duration: ms(260), easing: Easing.out(Easing.cubic) });
+  };
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const fill = useAnimatedStyle(() => ({ transform: [{ scaleX: p.value }] }));
+  const press = useAnimatedStyle(() => ({ transform: [{ scale: 1 - 0.03 * Math.min(1, p.value * 4) }] }));
+  return (
+    <Appear from="up" delay={200}>
+      <Pressable onPressIn={start} onPressOut={stop}>
+        <Animated.View style={[styles.hold, press]}>
+          <Animated.View style={[styles.holdFill, fill]} />
+          <Feather name="trash-2" size={16} color="#fff" />
+          <Text style={styles.holdTxt}>{holding ? 'Keep holding…' : label}</Text>
+        </Animated.View>
+      </Pressable>
+    </Appear>
+  );
+}
+
+function CheckRow({ on, onToggle, title, sub, delay }: { on: boolean; onToggle: () => void; title: string; sub: string; delay: number }) {
+  const v = useSharedValue(on ? 1 : 0);
+  useEffect(() => {
+    v.value = withSpring(on ? 1 : 0, sp({ damping: 15, stiffness: 280 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on]);
+  const box = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(v.value, [0, 1], ['rgba(255,255,255,0)', C.danger]),
+    borderColor: interpolateColor(v.value, [0, 1], ['rgba(255,255,255,0.25)', C.danger]),
+  }));
+  const tick = useAnimatedStyle(() => ({ opacity: v.value, transform: [{ scale: 0.5 + 0.5 * v.value }] }));
+  return (
+    <Appear from="up" delay={delay}>
+      <Tappable
+        onPress={() => {
+          Haptics.selectionAsync().catch(() => {});
+          onToggle();
+        }}
+        scaleTo={0.98}
+        style={styles.check}>
+        <Animated.View style={[styles.checkBox, box]}>
+          <Animated.View style={tick}>
+            <Feather name="check" size={13} color="#0b0b0d" />
+          </Animated.View>
+        </Animated.View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.checkTitle}>{title}</Text>
+          <Text style={styles.checkSub}>{sub}</Text>
+        </View>
+      </Tappable>
+    </Appear>
   );
 }
 
@@ -390,6 +582,16 @@ const styles = StyleSheet.create({
   secondaryTxt: { fontSize: 15, fontWeight: '800', color: C.accentA },
   rowBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 16, marginBottom: 8 },
   rowBtnTxt: { flex: 1, fontSize: 15, fontWeight: '600', color: C.text },
+  rowDanger: { backgroundColor: 'rgba(248,103,122,0.07)', boxShadow: 'inset 0 0 0 1px rgba(248,103,122,0.22)' },
+  rowSub: { fontSize: 12, color: C.muted, marginTop: 2 },
+  hold: { marginTop: 14, height: 52, borderRadius: 14, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(248,103,122,0.28)' },
+  holdFill: { position: 'absolute', left: 0, top: 0, bottom: 0, right: 0, backgroundColor: C.danger, transformOrigin: 'left' },
+  holdTxt: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  check: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)', marginBottom: 8 },
+  checkBox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  checkTitle: { fontSize: 14, fontWeight: '700', color: C.text },
+  checkSub: { fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 16 },
+  inlineLink: { color: C.accentB, fontWeight: '800' },
   note: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16 },
   noteOk: { backgroundColor: 'rgba(79,209,197,0.08)', boxShadow: 'inset 0 0 0 1px rgba(79,209,197,0.28)' },
   noteErr: { backgroundColor: 'rgba(245,161,92,0.08)', boxShadow: 'inset 0 0 0 1px rgba(245,161,92,0.3)' },

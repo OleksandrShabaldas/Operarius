@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { LayoutChangeEvent, StyleProp, View, ViewStyle } from 'react-native';
+import { LayoutChangeEvent, PixelRatio, Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import Svg, { Defs, G, Line, LinearGradient, Mask, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { LinearGradient as Fade } from 'expo-linear-gradient';
+import { hexA } from '../utils';
 
 let seq = 0;
 
@@ -35,10 +37,77 @@ const RADIAL: Record<Radial, [number, number][]> = {
   ],
 };
 
-// Thin diagonal stripes that fade out through an alpha mask, so they dissolve
-// into whatever sits behind them (cards, bands, any colour) instead of fading to
-// a fixed background colour. Sizes itself from layout and redraws on resize.
-export function Stripes({
+type Props = {
+  color: string;
+  opacity?: number;
+  spacing?: number;
+  strokeWidth?: number;
+  fade?: StripeFade;
+  // The flat colour right behind the stripes: their edges fade into it.
+  fadeTo?: string;
+  style?: StyleProp<ViewStyle>;
+};
+
+// Thin diagonal stripes, rising to the right, `spacing` apart (measured across
+// the view), fading out at the edges.
+//
+// On the phone they're drawn by the GPU: a small gradient tile the view
+// repeats as its background, with the edges faded by gradients in `fadeTo`,
+// the flat colour behind them (over a flat colour that is the same as fading
+// the stripes themselves). An SVG with alpha masks was painted in software
+// and held the day up for most of a second each time it came on screen. The
+// web preview, and radial fades, keep the SVG.
+export function Stripes(props: Props) {
+  const edges = props.fade && typeof props.fade === 'object' ? props.fade : null;
+  if (Platform.OS === 'web' || !props.fadeTo || (props.fade && !edges)) return <SvgStripes {...props} />;
+  return <TileStripes {...props} edges={edges} fadeTo={props.fadeTo} />;
+}
+
+function TileStripes({
+  color,
+  opacity = 0.5,
+  spacing = 6,
+  strokeWidth = 1,
+  edges,
+  fadeTo,
+  style,
+}: Props & { edges: { top?: number; bottom?: number; left?: number; right?: number } | null; fadeTo: string }) {
+  const bg = useMemo(() => {
+    // One period across the tile's diagonal: a line through its corners and one
+    // through its middle, so tiles meet seamlessly. Whole pixels, no seams.
+    const r = PixelRatio.get();
+    const tile = Math.max(1, Math.round(spacing * r)) / r;
+    const diag = tile * Math.SQRT2;
+    const half = (strokeWidth / 2 / diag) * 100;
+    const soft = (0.45 / diag) * 50; // half of a ~0.45 soft edge, so lines don't stair-step
+    const on = hexA(color, opacity);
+    const off = hexA(color, 0);
+    const p = (v: number) => `${Math.max(0, Math.min(100, v)).toFixed(2)}%`;
+    const img =
+      `linear-gradient(135deg, ${on} 0%, ${on} ${p(half - soft)}, ${off} ${p(half + soft)}, ` +
+      `${off} ${p(50 - half - soft)}, ${on} ${p(50 - half + soft)}, ${on} ${p(50 + half - soft)}, ${off} ${p(50 + half + soft)}, ` +
+      `${off} ${p(100 - half - soft)}, ${on} ${p(100 - half + soft)}, ${on} 100%)`;
+    return { experimental_backgroundImage: img, experimental_backgroundSize: `${tile}px ${tile}px` } as ViewStyle;
+  }, [color, opacity, spacing, strokeWidth]);
+  const clear = hexA(fadeTo, 0);
+  const t = edges?.top ?? 0;
+  const b = edges?.bottom ?? 0;
+  const l = edges?.left ?? 0;
+  const rt = edges?.right ?? 0;
+  return (
+    <View pointerEvents="none" style={[styles.wrap, style]}>
+      <View style={[StyleSheet.absoluteFill, bg]} />
+      {t > 0 && <Fade colors={[fadeTo, clear]} style={[styles.edge, { top: 0, left: 0, right: 0, height: t }]} />}
+      {b > 0 && <Fade colors={[clear, fadeTo]} style={[styles.edge, { bottom: 0, left: 0, right: 0, height: b }]} />}
+      {l > 0 && <Fade colors={[fadeTo, clear]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.edge, { top: 0, bottom: 0, left: 0, width: l }]} />}
+      {rt > 0 && <Fade colors={[clear, fadeTo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.edge, { top: 0, bottom: 0, right: 0, width: rt }]} />}
+    </View>
+  );
+}
+
+// The SVG version: stripes faded through an alpha mask, so they dissolve into
+// whatever sits behind them. Sizes itself from layout and redraws on resize.
+function SvgStripes({
   color,
   opacity = 0.5,
   spacing = 6,
@@ -51,6 +120,7 @@ export function Stripes({
   spacing?: number;
   strokeWidth?: number;
   fade?: StripeFade;
+  fadeTo?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -134,3 +204,8 @@ export function Stripes({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  wrap: { overflow: 'hidden' },
+  edge: { position: 'absolute' },
+});

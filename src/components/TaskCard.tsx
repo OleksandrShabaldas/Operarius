@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, LinearTransition, runOnJS, runOnUI, SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { ms, sp } from '../motion';
@@ -13,7 +13,6 @@ import { INTENSITY_COLOR, remindsAtAll } from '../reminders';
 import { openSubtasks } from '../recurrence';
 import { Pos } from '../layout';
 import { PlaceIcon } from './PlaceIcon';
-import { Stripes } from './Stripes';
 import { Appear, stagger, Tappable } from './anim';
 import { CheckBlock, TaskCheck } from './TaskCheck';
 import { StarMark } from './StarToggle';
@@ -186,11 +185,15 @@ function SubtaskStrip({
 }
 
 // "Missed" chip in the top-right corner, with a faint halo of red warning
-// stripes centred on it that fades out long before the card's edges.
+// stripes centred on it that fades out long before the card's edges. (The
+// halo is always the same, so it's an image: drawn by the GPU, with its fade
+// baked in — lines 4 apart and 0.8 wide in the "now" red at 0.42, fading
+// over an ellipse that fills the box.)
+const HALO = require('../../assets/missed-halo.png');
 function MissedBadge() {
   return (
     <View pointerEvents="none" style={styles.missedWrap}>
-      <Stripes color={C.now} opacity={0.42} spacing={4} strokeWidth={0.8} fade="radial-faint" style={StyleSheet.absoluteFill} />
+      <Image source={HALO} style={StyleSheet.absoluteFill} fadeDuration={0} />
       <View style={styles.missedBadge}>
         <Text style={styles.missedTxt}>Missed</Text>
       </View>

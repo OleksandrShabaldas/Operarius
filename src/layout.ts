@@ -23,6 +23,12 @@ export type OverlapBand = {
 };
 
 export type DayLayout = {
+  // The span shown: the day window, stretched to whole hours around any task
+  // before or after it (those hours are drawn as the red zones).
+  viewStart: number;
+  viewEnd: number;
+  startY: number; // where the day window begins / ends on screen
+  endY: number;
   sorted: Task[];
   pos: Record<string, Pos>;
   freeblocks: FreeBlock[];
@@ -69,11 +75,27 @@ function minOffset(free: number, thr: number): number {
   return MIN_FREE_H + 12 + (free - thr - 1) * 0.8;
 }
 
+/** The span a day shows: its window, stretched to whole hours around any task outside it. */
+export function viewRange(tasks: { start: number; dur: number }[], dayStart: number, dayEnd: number): { start: number; end: number } {
+  let start = dayStart;
+  let end = dayEnd;
+  for (const t of tasks) {
+    if (t.start < start) start = Math.max(0, Math.floor(t.start / 60) * 60);
+    if (t.start + t.dur > end) end = Math.min(24 * 60, Math.ceil((t.start + t.dur) / 60) * 60);
+  }
+  return { start, end };
+}
+
 // Lays the day out top-to-bottom. Tasks that don't overlap push down with free
 // blocks / gap chips between them; tasks that overlap in time are stacked into
 // one fused cluster joined by overlap bands (never drawn on top of each other).
-export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number, gapThreshold: number): DayLayout {
+// `view` pins the span shown (while a card is dragged, so the day doesn't jump
+// as the card crosses the start or end of the day).
+export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number, gapThreshold: number, view?: { start: number; end: number }): DayLayout {
   const sorted = [...tasks].sort((a, b) => a.start - b.start || b.dur - a.dur || (a.id < b.id ? -1 : 1));
+  const fit = viewRange(sorted, dayStart, dayEnd);
+  const vs = Math.min(fit.start, view?.start ?? fit.start);
+  const ve = Math.max(fit.end, view?.end ?? fit.end);
 
   const pos: Record<string, Pos> = {};
   const freeblocks: FreeBlock[] = [];
@@ -89,16 +111,16 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
     const s = t.start;
     const e = s + t.dur;
     const h = cardHeight(t);
-    const propTop = (s - dayStart) * PX + TOPBAND;
+    const propTop = (s - vs) * PX + TOPBAND;
     let top: number;
     let joinTop = false;
 
     if (!cur) {
       // First task — a leading free block from the day start if there's a gap.
-      const lead = s - dayStart;
+      const lead = s - vs;
       if (lead > gapThreshold) {
         top = Math.max(propTop, TOPBAND + 7 + minOffset(lead, gapThreshold));
-        freeblocks.push({ key: 'free-lead', label: `${fmtDur(lead)} free`, start: dayStart, end: s, bounded: true, top: TOPBAND + 7, height: top - TOPBAND - 14 });
+        freeblocks.push({ key: 'free-lead', label: `${fmtDur(lead)} free`, start: vs, end: s, bounded: true, top: TOPBAND + 7, height: top - TOPBAND - 14 });
       } else {
         top = Math.max(propTop, TOPBAND);
       }
@@ -143,25 +165,25 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
   }
   if (cur) clusters.push(cur);
 
-  const dayBottomPx = (dayEnd - dayStart) * PX + TOPBAND;
+  const dayBottomPx = (ve - vs) * PX + TOPBAND;
   const botTop = Math.max(dayBottomPx, maxBottom + 12);
   const H = botTop + BOTBAND;
 
   // Trailing free block from the last cluster to the end of the day.
   const last = clusters[clusters.length - 1];
-  if (last && prev && dayEnd - last.endMin > gapThreshold && botTop - last.bottom - 14 >= MIN_FREE_H) {
-    freeblocks.push({ key: `free-after-${prev.id}`, label: `${fmtDur(dayEnd - last.endMin)} free`, start: last.endMin, end: dayEnd, bounded: false, top: last.bottom + 7, height: botTop - last.bottom - 14 });
+  if (last && prev && ve - last.endMin > gapThreshold && botTop - last.bottom - 14 >= MIN_FREE_H) {
+    freeblocks.push({ key: `free-after-${prev.id}`, label: `${fmtDur(ve - last.endMin)} free`, start: last.endMin, end: ve, bounded: false, top: last.bottom + 7, height: botTop - last.bottom - 14 });
   }
 
   // Minute → Y anchors, one pair per cluster (not per card: inside an overlap
   // cluster card order ≠ time order). Y is forced non-decreasing so the ruler
   // can never run backwards.
-  const raw: { min: number; y: number }[] = [{ min: dayStart, y: TOPBAND }];
+  const raw: { min: number; y: number }[] = [{ min: vs, y: TOPBAND }];
   for (const c of clusters) {
     raw.push({ min: c.startMin, y: c.top });
     raw.push({ min: c.endMin, y: c.bottom });
   }
-  raw.push({ min: dayEnd, y: botTop });
+  raw.push({ min: ve, y: botTop });
   raw.sort((a, b) => a.min - b.min || a.y - b.y);
   const anchors: { min: number; y: number }[] = [];
   for (const a of raw) {
@@ -197,7 +219,25 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
     return z.min + (y - z.y) / PX;
   };
 
-  return { sorted, pos, freeblocks, chips, overlaps, botTop, H, yAt, yToMin };
+  // Free time is offered only inside the day window: blocks reaching into the
+  // hours before or after it are cut at its edge (or dropped).
+  const free: FreeBlock[] = [];
+  for (const g of freeblocks) {
+    const s = Math.max(g.start, dayStart);
+    const e = Math.min(g.end, dayEnd);
+    if (s === g.start && e === g.end) {
+      free.push(g);
+      continue;
+    }
+    if (e - s <= gapThreshold) continue;
+    const top = s === g.start ? g.top : yAt(s) + 7;
+    const bottom = e === g.end ? g.top + g.height : yAt(e) - 7;
+    if (bottom - top < MIN_FREE_H) continue;
+    free.push({ ...g, start: s, end: e, bounded: e < g.end ? false : g.bounded, label: `${fmtDur(e - s)} free`, top, height: bottom - top });
+  }
+  const inChips = chips.filter((c) => c.end > dayStart && c.start < dayEnd);
+
+  return { viewStart: vs, viewEnd: ve, startY: Math.max(TOPBAND, yAt(dayStart)), endY: Math.min(botTop, yAt(dayEnd)), sorted, pos, freeblocks: free, chips: inChips, overlaps, botTop, H, yAt, yToMin };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,27 +250,32 @@ export function computeDayLayout(tasks: Task[], dayStart: number, dayEnd: number
 // task reads as overlapping it, minute by minute.
 // ---------------------------------------------------------------------------
 export type DragRuler = {
+  lo: number; // earliest / latest start the card can be dragged to
+  hi: number;
   layoutAt: (start: number) => DayLayout; // the day with the card landed at `start`
   yOf: (min: number) => number; // start time → card-top y
   minOf: (y: number) => number; // card-top y → start time (unsnapped)
 };
 
 export function buildDragRuler(dragged: Task, others: Task[], dayStart: number, dayEnd: number, gapThreshold: number): DragRuler {
+  // The span stays as it was when the card was picked up (the red hours
+  // included), so the day holds still while the card crosses its edges.
+  const view = viewRange([...others, dragged], dayStart, dayEnd);
   const cache = new Map<number, DayLayout>();
   const layoutAt = (start: number) => {
     let L = cache.get(start);
     if (!L) {
-      L = computeDayLayout([...others, { ...dragged, start }], dayStart, dayEnd, gapThreshold);
+      L = computeDayLayout([...others, { ...dragged, start }], dayStart, dayEnd, gapThreshold, view);
       cache.set(start, L);
     }
     return L;
   };
-  const without = computeDayLayout(others, dayStart, dayEnd, gapThreshold);
+  const without = computeDayLayout(others, dayStart, dayEnd, gapThreshold, view);
 
   const ts: number[] = [];
   const ys: number[] = [];
-  const first = Math.ceil(dayStart / 5) * 5;
-  for (let t = first; t <= dayEnd - 5; t += 5) {
+  const first = Math.ceil(view.start / 5) * 5;
+  for (let t = first; t <= view.end - 5; t += 5) {
     const p = layoutAt(t).pos[dragged.id];
     let y = p && !p.joinTop ? p.top : without.yAt(t);
     if (ys.length) y = Math.max(y, ys[ys.length - 1]); // never runs backwards
@@ -265,20 +310,29 @@ export function buildDragRuler(dragged: Task, others: Task[], dayStart: number, 
     return b > a ? ts[lo] + ((y - a) / (b - a)) * 5 : ts[lo];
   };
 
-  return { layoutAt, yOf, minOf };
+  return { lo: n ? ts[0] : dayStart, hi: n ? ts[n - 1] : dayEnd - 5, layoutAt, yOf, minOf };
 }
 
 // "Push apart" drop: slide a dropped task to the nearest side of whatever it
 // lands on (before if dropped on the upper half, after otherwise), repeating
 // in that direction until it no longer overlaps anything.
 export function resolvePushApart(start: number, dur: number, others: { start: number; dur: number }[]): number {
-  let s = start;
-  let dir = 0;
-  for (let i = 0; i < 16; i++) {
-    const hit = others.find((o) => o.start < s + dur && s < o.start + o.dur);
-    if (!hit) return Math.max(0, s);
-    if (dir === 0) dir = s + dur / 2 < hit.start + hit.dur / 2 ? -1 : 1;
-    s = dir < 0 ? hit.start - dur : hit.start + hit.dur;
-  }
-  return Math.max(0, s);
+  // The day holds 00:00–24:00: pushed past either end, the card tries the other
+  // way, and if it fits neither way it stays where it was dropped (overlapping).
+  const max = 24 * 60;
+  const hitAt = (s: number) => others.find((o) => o.start < s + dur && s < o.start + o.dur);
+  const first = hitAt(start);
+  if (!first) return start;
+  const walk = (dir: number) => {
+    let s = start;
+    for (let i = 0; i < 16; i++) {
+      const hit = hitAt(s);
+      if (!hit) return s;
+      s = dir < 0 ? hit.start - dur : hit.start + hit.dur;
+      if (s < 0 || s + dur > max) return null;
+    }
+    return null;
+  };
+  const pref = start + dur / 2 < first.start + first.dur / 2 ? -1 : 1;
+  return walk(pref) ?? walk(-pref) ?? start;
 }

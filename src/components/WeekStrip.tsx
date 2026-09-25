@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Line } from 'react-native-svg';
+import { FlatList, NativeScrollEvent, NativeSyntheticEvent, PixelRatio, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { WeekStart } from '../types';
@@ -30,7 +29,17 @@ const DOTS_H = 12;
 const DOT_SIZE = [5, 5, 5, 5, 5, 4.6, 4.2]; // by dots in the widest row
 const DOT_GAP = [0, 0, 4, 3.4, 2.8, 2.2, 1.7];
 
-export function Dots({ dots, width = DOTS_W, height = DOTS_H }: { dots: DayDot[]; width?: number; height?: number }) {
+// Drawn as plain views (by the GPU), not an SVG: an SVG is painted in software
+// whenever it mounts or changes, and a week strip holds some twenty of these.
+// A day's dots are only redrawn when they change.
+const sameDots = (a: DayDot[], b: DayDot[]) => a.length === b.length && a.every((d, i) => d.color === b[i].color && d.done === b[i].done);
+
+export const Dots = React.memo(
+  DotsBase,
+  (p, n) => p.width === n.width && p.height === n.height && sameDots(p.dots, n.dots)
+);
+
+function DotsBase({ dots, width = DOTS_W, height = DOTS_H }: { dots: DayDot[]; width?: number; height?: number }) {
   if (dots.length === 0) return <View style={{ width, height }} />;
   const overflow = dots.length > MAX_DOTS;
   const shown = overflow ? dots.slice(0, MAX_DOTS - 1) : dots;
@@ -49,32 +58,40 @@ export function Dots({ dots, width = DOTS_W, height = DOTS_H }: { dots: DayDot[]
     return { cx: (width - rowW) / 2 + c * (size + gap) + size / 2, cy };
   };
   const stroke = size < 4.8 ? 1.15 : 1.3;
+  const box = (cx: number, cy: number, s: number) => ({ left: cx - s / 2, top: cy - s / 2, width: s, height: s, borderRadius: s / 2 });
   return (
-    <Svg width={width} height={height}>
+    <View style={{ width, height }}>
       {shown.map((d, i) => {
         const { cx, cy } = pos(i);
-        return d.done ? (
-          <Circle key={i} cx={cx} cy={cy} r={size / 2} fill={d.color} />
-        ) : (
-          <Circle key={i} cx={cx} cy={cy} r={size / 2 - stroke / 2} fill="none" stroke={d.color} strokeWidth={stroke} />
-        );
+        return <View key={i} style={[styles.dot, box(cx, cy, size), d.done ? { backgroundColor: d.color } : { borderWidth: stroke, borderColor: d.color }]} />;
       })}
       {overflow &&
         (() => {
+          // "+": two rounded bars
           const { cx, cy } = pos(shown.length);
-          const a = size / 2 - 0.2;
+          const a = size - 0.4;
           return (
             <>
-              <Line x1={cx - a} y1={cy} x2={cx + a} y2={cy} stroke={C.muted} strokeWidth={1.2} strokeLinecap="round" />
-              <Line x1={cx} y1={cy - a} x2={cx} y2={cy + a} stroke={C.muted} strokeWidth={1.2} strokeLinecap="round" />
+              <View style={[styles.plus, { left: cx - a / 2, top: cy - 0.6, width: a, height: 1.2 }]} />
+              <View style={[styles.plus, { left: cx - 0.6, top: cy - a / 2, width: 1.2, height: a }]} />
             </>
           );
         })()}
-    </Svg>
+    </View>
   );
 }
 
 const daysBetween = (a: string, b: string) => Math.round((dateFromKey(b).getTime() - dateFromKey(a).getTime()) / 86400000);
+
+// A page width that is a whole number of physical pixels. The pager snaps in
+// steps of its own width in pixels while the weeks are laid out in dp; any
+// fraction of a pixel between the two adds up page after page (hundreds of
+// weeks from the first one), leaving a swiped-to week cropped on one side and
+// its neighbour peeking in on the other.
+const pixelWidth = (dp: number) => {
+  const r = PixelRatio.get();
+  return Math.floor(dp * r) / r;
+};
 
 // A native horizontal pager of weeks: the strip itself follows the finger and
 // snaps to the neighbouring week (only the strip moves — not the whole screen).
@@ -149,11 +166,12 @@ export const WeekStrip = React.memo(function WeekStrip({ selectedKey, weekStart,
   };
 
   return (
-    <View style={styles.wrap} onLayout={(e) => setW(Math.round(e.nativeEvent.layout.width))}>
+    <View style={styles.wrap} onLayout={(e) => setW(pixelWidth(e.nativeEvent.layout.width))}>
       {w > 0 && (
         <FlatList
           key={weekStart}
           ref={listRef}
+          style={{ width: w }}
           horizontal
           pagingEnabled
           data={data}
@@ -177,6 +195,8 @@ export const WeekStrip = React.memo(function WeekStrip({ selectedKey, weekStart,
 });
 
 const styles = StyleSheet.create({
+  dot: { position: 'absolute' },
+  plus: { position: 'absolute', borderRadius: 0.6, backgroundColor: C.muted },
   wrap: { marginTop: 14 },
   row: { flexDirection: 'row', gap: 4 },
   cell: { flex: 1, alignItems: 'center', paddingTop: 8, paddingBottom: 7, borderRadius: 14, overflow: 'hidden', position: 'relative' },

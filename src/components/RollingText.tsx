@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleProp, Text, TextStyle, ViewStyle } from 'react-native';
-import Animated, { Easing, interpolate, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { LayoutChangeEvent, StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import Animated, { Easing, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { ms } from '../motion';
 
 // One character position. Rolls vertically from `from` to `to` (up when moving
 // forward, down when moving back), like an odometer / split-flap. The slot is a
-// clipped column holding both glyphs, so its width is the wider of the two while
-// rolling; when it settles, a layout transition eases it to the new width.
+// clipped column holding both glyphs; its width eases from the old glyph's to
+// the new one's as it rolls (a new slot grows in from nothing, a dropped one
+// narrows away).
 type Slot = { id: number; from: string; to: string; dir: number; ver: number; delay: number };
 
 let slotSeq = 0;
@@ -48,8 +49,26 @@ function RollColumn({ slot, height, glyph, onDone }: { slot: Slot; height: numbe
 
 function RollingChar({ slot, height, textStyle, onDone }: { slot: Slot; height: number; textStyle: GlyphStyle; onDone: (id: number, ver: number) => void }) {
   const glyph = [textStyle, { height, lineHeight: height, textAlign: 'center' as const, includeFontPadding: false }];
+  // The width is driven here from the measured glyph, not by a layout
+  // transition: those could leave a letter at a stale width (clipped, with a
+  // gap after it) once the word around it had changed length.
+  const w = useSharedValue(slot.from === '' ? 0 : -1); // -1: not measured yet (natural width)
+  const delay = useRef(slot.delay);
+  delay.current = slot.delay;
+  const onMeasure = (e: LayoutChangeEvent) => {
+    const target = e.nativeEvent.layout.width;
+    if (w.value < 0) w.value = target;
+    else w.value = withDelay(ms(delay.current), withTiming(target, { duration: ms(DURATION), easing: Easing.out(Easing.cubic) }));
+  };
+  const box = useAnimatedStyle(() => (w.value < 0 ? {} : { width: w.value }));
   return (
-    <Animated.View layout={LinearTransition.duration(ms(260))} style={{ height, overflow: 'hidden' }}>
+    <Animated.View style={[{ height, overflow: 'hidden', alignItems: 'center' }, box]}>
+      {/* The incoming glyph, measured at its natural width (never squeezed by the slot). */}
+      <View pointerEvents="none" style={styles.measure}>
+        <Text style={glyph} onLayout={onMeasure}>
+          {slot.to}
+        </Text>
+      </View>
       {slot.from === slot.to ? (
         // Settled: a single plain glyph (nothing hidden to bleed, and screen
         // readers read the text once).
@@ -121,10 +140,14 @@ export function RollingText({
   }, []);
 
   return (
-    <Animated.View layout={LinearTransition.duration(ms(260))} style={[{ flexDirection: 'row' }, style]}>
+    <View style={[{ flexDirection: 'row' }, style]}>
       {slots.map((s) => (
         <RollingChar key={s.id} slot={s} height={height} textStyle={textStyle} onDone={onDone} />
       ))}
-    </Animated.View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  measure: { position: 'absolute', left: 0, top: 0, width: 400, flexDirection: 'row', opacity: 0 },
+});

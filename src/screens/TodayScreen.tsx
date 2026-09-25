@@ -200,7 +200,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
     const sy = scrollOverride ?? scrollY.value;
     const y = c.baseY + dyRef.current + (sy - scrollAtStart.current);
     let m = Math.round(c.ruler.minOf(y) / 5) * 5;
-    m = Math.max(S.dayStart, Math.min(S.dayEnd - 5, m));
+    m = Math.max(c.ruler.lo, Math.min(c.ruler.hi, m));
     if (m !== d.min) {
       dragRef.current = { id: d.id, min: m };
       setDrag(dragRef.current);
@@ -426,6 +426,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
               showsVerticalScrollIndicator={false}>
               <Timeline
                 layout={layout}
+                dayKey={selectedKey}
                 dragged={dragged}
                 scrollY={scrollY}
                 tags={settings.tags}

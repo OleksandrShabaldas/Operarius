@@ -24,6 +24,8 @@ type Props = {
 };
 
 type YM = { y: number; m: number };
+type Mode = 'days' | 'months' | 'years';
+const SHORT = MONTHS.map((m) => m.slice(0, 3));
 const ymOf = (key: string): YM => {
   const d = dateFromKey(key);
   return { y: d.getFullYear(), m: d.getMonth() };
@@ -43,12 +45,17 @@ function monthCells({ y, m }: YM, weekStart: WeekStart): string[] {
 
 // A month drops down from under the header: every day with its task dots,
 // today ringed, the open day filled. Swipe or use the arrows to change month;
-// tap a day to go there.
+// tap a day to go there. Tap the month's name to pick a month, the year to
+// pick a year.
 export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, onClose }: Props) {
   const [mounted, setMounted] = useState(open);
   const [view, setView] = useState<YM>(ymOf(selectedKey));
   const [dir, setDir] = useState(1);
+  const [mode, setMode] = useState<Mode>('days');
+  const [yearPage, setYearPage] = useState(0); // first year shown by the year picker
+  const [gridH, setGridH] = useState(0); // the day grid's height — the pickers take the same room
   const p = useSharedValue(0); // open progress
+  const pickP = useSharedValue(0); // 1 while a month / year picker is up
   const dx = useSharedValue(0); // swipe offset
   const today = todayKey();
   const current = ymOf(today);
@@ -56,6 +63,7 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
   useEffect(() => {
     if (open) {
       setView(ymOf(selectedKey));
+      setMode('days');
       setMounted(true);
       p.value = withSpring(1, sp({ damping: 22, stiffness: 240, mass: 0.8 }));
     } else if (mounted) {
@@ -67,20 +75,45 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Android back closes the panel first.
+  // Android back closes a picker first, then the panel.
   useEffect(() => {
     if (!open) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      onClose();
+      if (mode !== 'days') setMode('days');
+      else onClose();
       return true;
     });
     return () => sub.remove();
-  }, [open, onClose]);
+  }, [open, onClose, mode]);
 
+  // The arrows (and swipes) step by what's shown: a month, a year, twelve years.
   const go = (delta: number) => {
     setDir(delta > 0 ? 1 : -1);
-    setView((v) => shiftYM(v, delta));
+    if (mode === 'days') setView((v) => shiftYM(v, delta));
+    else if (mode === 'months') setView((v) => ({ y: v.y + delta, m: v.m }));
+    else setYearPage((p) => p + 12 * delta);
     Haptics.selectionAsync().catch(() => {});
+  };
+  useEffect(() => {
+    pickP.value = withTiming(mode === 'days' ? 0 : 1, { duration: ms(200), easing: Easing.out(Easing.cubic) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+  const toggle = (m: Mode) => {
+    Haptics.selectionAsync().catch(() => {});
+    if (m === 'years') setYearPage(view.y - 4);
+    setMode((cur) => (cur === m ? 'days' : m));
+  };
+  const pickMonth = (m: number) => {
+    Haptics.selectionAsync().catch(() => {});
+    setDir(m >= view.m ? 1 : -1);
+    setView({ y: view.y, m });
+    setMode('days');
+  };
+  const pickYear = (y: number) => {
+    Haptics.selectionAsync().catch(() => {});
+    setDir(y >= view.y ? 1 : -1);
+    setView({ y, m: view.m });
+    setMode('days');
   };
   const goRef = useRef(go);
   goRef.current = go;
@@ -106,6 +139,8 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
   }));
   const shade = useAnimatedStyle(() => ({ opacity: p.value }));
   const grid = useAnimatedStyle(() => ({ transform: [{ translateX: dx.value }] }));
+  // The weekday letters make way for a picker (lifting away as it opens).
+  const dow = useAnimatedStyle(() => ({ opacity: 1 - pickP.value, transform: [{ translateY: -5 * pickP.value }] }));
 
   const cells = useMemo(() => monthCells(view, weekStart), [view, weekStart]);
   const letters = weekdayLetters(weekStart);
@@ -123,9 +158,10 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
             <Feather name="chevron-left" size={20} color={C.textDim} />
           </Tappable>
           <View style={styles.titleWrap}>
-            <RollingText text={`${MONTHS[view.m]} ${view.y}`} dir={dir} height={24} textStyle={styles.title} />
+            <TitlePart text={MONTHS[view.m]} dir={dir} open={mode === 'months'} onPress={() => toggle('months')} />
+            <TitlePart text={String(view.y)} dir={dir} open={mode === 'years'} onPress={() => toggle('years')} />
           </View>
-          {offMonth && (
+          {offMonth && mode === 'days' && (
             <Appear from="pop" key={`${view.y}-${view.m}`}>
               <Tappable
                 onPress={() => {
@@ -146,17 +182,30 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
           </Tappable>
         </View>
 
-        <View style={styles.dowRow}>
+        <Animated.View style={[styles.dowRow, dow]}>
           {letters.map((l, i) => (
             <Text key={i} style={styles.dow}>
               {l}
             </Text>
           ))}
-        </View>
+        </Animated.View>
 
         <GestureDetector gesture={swipe}>
           <Animated.View style={grid}>
-            <View key={`${view.y}-${view.m}`}>
+            {mode === 'months' ? (
+              <PickGrid
+                key={`m${view.y}`}
+                height={gridH}
+                items={SHORT.map((label, m) => ({ label, on: m === view.m, now: view.y === current.y && m === current.m, onPress: () => pickMonth(m) }))}
+              />
+            ) : mode === 'years' ? (
+              <PickGrid
+                key={`y${yearPage}`}
+                height={gridH}
+                items={Array.from({ length: 12 }, (_, i) => yearPage + i).map((y) => ({ label: String(y), on: y === view.y, now: y === current.y, onPress: () => pickYear(y) }))}
+              />
+            ) : (
+            <View key={`${view.y}-${view.m}`} onLayout={(e) => setGridH(e.nativeEvent.layout.height)}>
               {Array.from({ length: 6 }, (_, r) => (
                 <Appear key={r} from={dir > 0 ? 'right' : 'left'} distance={24} delay={r * 22} style={styles.week}>
                   {cells.slice(r * 7, r * 7 + 7).map((key) => {
@@ -186,6 +235,7 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
                 </Appear>
               ))}
             </View>
+            )}
           </Animated.View>
         </GestureDetector>
 
@@ -195,6 +245,46 @@ export function MonthView({ open, top, selectedKey, weekStart, dotsFor, onPick, 
           </Tappable>
         </View>
       </Animated.View>
+    </View>
+  );
+}
+
+// The month's name / the year in the header: tap to open its picker.
+function TitlePart({ text, dir, open, onPress }: { text: string; dir: number; open: boolean; onPress: () => void }) {
+  const v = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    v.value = withSpring(open ? 1 : 0, sp({ damping: 16, stiffness: 260 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const chev = useAnimatedStyle(() => ({ transform: [{ rotate: `${v.value * 180}deg` }] }));
+  const bg = useAnimatedStyle(() => ({ opacity: v.value }));
+  return (
+    <Tappable onPress={onPress} hitSlop={6} scaleTo={0.94} style={styles.titlePart}>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.titleOn, bg]} />
+      <RollingText text={text} dir={dir} height={24} textStyle={[styles.title, open && { color: C.accentB }]} />
+      <Animated.View style={chev}>
+        <Feather name="chevron-down" size={15} color={open ? C.accentB : C.muted} />
+      </Animated.View>
+    </Tappable>
+  );
+}
+
+// Twelve choices (months, or years) in the room of the day grid.
+function PickGrid({ items, height }: { items: { label: string; on: boolean; now: boolean; onPress: () => void }[]; height: number }) {
+  return (
+    <View style={[styles.pick, height > 0 && { height }]}>
+      {Array.from({ length: 4 }, (_, r) => (
+        <View key={r} style={styles.pickRow}>
+          {items.slice(r * 3, r * 3 + 3).map((it, c) => (
+            <Appear key={it.label} from="pop" delay={(r * 3 + c) * 18} style={styles.pickCellWrap}>
+              <Tappable onPress={it.onPress} scaleTo={0.92} style={[styles.pickCell, it.now && !it.on && styles.pickNow]}>
+                {it.on && <LinearGradient colors={['rgba(124,124,240,0.42)', 'rgba(79,209,197,0.2)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[StyleSheet.absoluteFill, styles.pickSel]} />}
+                <Text style={[styles.pickTxt, it.now && { color: C.accentB }, it.on && { color: '#fff' }]}>{it.label}</Text>
+              </Tappable>
+            </Appear>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
@@ -214,7 +304,16 @@ const styles = StyleSheet.create({
   },
   nav: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2, marginBottom: 10 },
   navBtn: { width: 36, height: 36, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
-  titleWrap: { flex: 1, alignItems: 'center' },
+  titleWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
+  titlePart: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, height: 34, borderRadius: 10 },
+  titleOn: { borderRadius: 10, backgroundColor: 'rgba(79,209,197,0.12)' },
+  pick: { justifyContent: 'space-evenly', paddingVertical: 6 },
+  pickRow: { flexDirection: 'row', gap: 8, marginVertical: 4 },
+  pickCellWrap: { flex: 1 },
+  pickCell: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)' },
+  pickNow: { borderWidth: 1.5, borderColor: C.accentB },
+  pickSel: { borderRadius: 14 },
+  pickTxt: { fontSize: 16, fontWeight: '700', color: C.text, fontVariant: ['tabular-nums'] },
   title: { fontSize: 17, fontWeight: '800', color: C.text },
   thisMonth: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, height: 30, borderRadius: 10, backgroundColor: 'rgba(79,209,197,0.13)' },
   thisMonthTxt: { fontSize: 12, fontWeight: '800', color: C.accentB },

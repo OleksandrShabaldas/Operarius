@@ -28,7 +28,20 @@
         android:resource="@xml/operarius_widget_month_info" />
     </receiver>
 
-    <!-- Rows of the timeline list -->
+    <!-- Today & Month -->
+    <receiver
+      android:name="com.operarius.widgets.ComboWidget"
+      android:exported="true"
+      android:label="@string/operarius_widget_combo_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/operarius_widget_combo_info" />
+    </receiver>
+
+    <!-- Rows of the timeline list (Today, Today & Month) -->
     <service
       android:name="com.operarius.widgets.TodayWidgetService"
       android:exported="false"

@@ -117,7 +117,7 @@ function Root() {
   // Google Calendar: keep tasks and the chosen calendar in step (Settings → Google Calendar).
   useCalendarSync({ loaded, tasks, settings, apply: applyCalendarSync });
 
-  // Home-screen widgets: today's timeline and the month.
+  // Home-screen widgets: today's timeline, the month, and both in one.
   useWidgetSync({ loaded, tasks, settings });
 
   // Links into the app — from a reminder, "Open task" on its screen, or a

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The switch's "Month" icon (a grid of days). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="13dp"
+  android:height="13dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24">
+  <path android:fillColor="#FFFFFFFF" android:pathData="M3,3.5 h4.8 v4.8 h-4.8 z M9.6,3.5 h4.8 v4.8 h-4.8 z M16.2,3.5 h4.8 v4.8 h-4.8 z M3,10.1 h4.8 v4.8 h-4.8 z M9.6,10.1 h4.8 v4.8 h-4.8 z M16.2,10.1 h4.8 v4.8 h-4.8 z M3,16.7 h4.8 v4.8 h-4.8 z M9.6,16.7 h4.8 v4.8 h-4.8 z" />
+</vector>

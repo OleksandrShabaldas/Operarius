@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Today & Month in the widget picker (before Android 12): the switch, then a timeline sketch. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:drawable="@drawable/operarius_widget_bg" />
+  <item android:left="14dp" android:width="146dp" android:top="14dp" android:height="30dp" android:gravity="top|left" android:drawable="@drawable/operarius_widget_seg_track" />
+  <item android:left="17dp" android:width="70dp" android:top="17dp" android:height="24dp" android:gravity="top|left" android:drawable="@drawable/operarius_widget_seg_on" />
+  <item android:left="16dp" android:right="120dp" android:top="58dp" android:height="8dp" android:gravity="top">
+    <shape android:shape="rectangle"><solid android:color="#40F4F4F6" /><corners android:radius="4dp" /></shape>
+  </item>
+  <item android:left="16dp" android:right="16dp" android:top="84dp" android:height="2dp" android:gravity="top">
+    <shape android:shape="rectangle"><solid android:color="#CCFF5A5F" /></shape>
+  </item>
+  <item android:left="58dp" android:right="16dp" android:top="96dp" android:height="44dp" android:gravity="top">
+    <shape android:shape="rectangle"><solid android:color="#1B1C20" /><corners android:radius="12dp" /></shape>
+  </item>
+  <item android:left="58dp" android:width="24dp" android:top="96dp" android:height="44dp" android:gravity="top|left">
+    <shape android:shape="rectangle"><solid android:color="#B57CF0" /><corners android:topLeftRadius="12dp" android:bottomLeftRadius="12dp" /></shape>
+  </item>
+  <item android:left="58dp" android:right="16dp" android:top="152dp" android:height="44dp" android:gravity="top">
+    <shape android:shape="rectangle"><solid android:color="#1B1C20" /><corners android:radius="12dp" /></shape>
+  </item>
+  <item android:left="58dp" android:width="24dp" android:top="152dp" android:height="44dp" android:gravity="top|left">
+    <shape android:shape="rectangle"><solid android:color="#F5A15C" /><corners android:topLeftRadius="12dp" android:bottomLeftRadius="12dp" /></shape>
+  </item>
+</layer-list>

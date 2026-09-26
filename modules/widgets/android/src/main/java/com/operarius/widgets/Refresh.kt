@@ -26,6 +26,7 @@ internal object Refresh {
     val mgr = AppWidgetManager.getInstance(ctx)
     for (id in ids(ctx, TodayWidget::class.java)) TodayWidget.render(ctx, mgr, id)
     for (id in ids(ctx, MonthWidget::class.java)) MonthWidget.render(ctx, mgr, id)
+    for (id in ids(ctx, ComboWidget::class.java)) ComboWidget.render(ctx, mgr, id)
     schedule(ctx)
   }
 
@@ -46,7 +47,7 @@ internal object Refresh {
       Intent(ctx, TodayWidget::class.java).setAction(ACTION_TICK),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-    val timeline = ids(ctx, TodayWidget::class.java).isNotEmpty()
+    val timeline = ids(ctx, TodayWidget::class.java).isNotEmpty() || ids(ctx, ComboWidget::class.java).isNotEmpty()
     if (!timeline && ids(ctx, MonthWidget::class.java).isEmpty()) {
       am.cancel(pi)
       return

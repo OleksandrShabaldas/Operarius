@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Today / Month coming in: fades up from a little below, settling softly. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+  android:interpolator="@android:interpolator/decelerate_cubic"
+  android:shareInterpolator="true">
+  <alpha
+    android:duration="260"
+    android:fromAlpha="0"
+    android:toAlpha="1" />
+  <translate
+    android:duration="320"
+    android:fromYDelta="3%"
+    android:toYDelta="0" />
+</set>

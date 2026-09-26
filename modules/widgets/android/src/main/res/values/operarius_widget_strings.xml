@@ -4,6 +4,8 @@
   <string name="operarius_widget_today_desc">What\'s left of today on a timeline: the now line, what\'s next and your free time, with a quick way to add a task</string>
   <string name="operarius_widget_month_label">Month</string>
   <string name="operarius_widget_month_desc">The month at a glance: up to three tasks a day, starred ones first</string>
+  <string name="operarius_widget_combo_label">Today &amp; Month</string>
+  <string name="operarius_widget_combo_desc">Today\'s timeline and the month in one widget: switch between them with one tap</string>
   <string name="operarius_widget_today">Today</string>
   <string name="operarius_widget_create">＋ Create a task</string>
   <string name="operarius_widget_prev">Previous month</string>

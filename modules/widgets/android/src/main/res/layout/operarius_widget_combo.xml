@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Today & Month: one widget, two views, switched with the Today / Month switch.
+     What differs between them sits in view flippers that animate in step: the
+     switch's pill glides, its labels cross-fade, the buttons on the right
+     cross-fade, and the content sinks away as the other rises in. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/c_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/operarius_widget_bg"
+  android:orientation="vertical"
+  android:paddingLeft="12dp"
+  android:paddingTop="12dp"
+  android:paddingRight="12dp"
+  android:paddingBottom="6dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="32dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <!-- The Today / Month switch: a pill gliding between the two sides, the
+         labels changing colour under it. -->
+    <FrameLayout
+      android:id="@+id/c_seg"
+      android:layout_width="146dp"
+      android:layout_height="30dp"
+      android:background="@drawable/operarius_widget_seg_track"
+      android:padding="3dp">
+
+      <ViewFlipper
+        android:id="@+id/c_p0"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inAnimation="@anim/operarius_widget_pill_from_right"
+        android:outAnimation="@anim/operarius_widget_pill_to_right">
+
+        <ImageView
+        android:id="@+id/c_pl"
+        android:layout_width="70dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="@drawable/operarius_widget_seg_on" />
+
+        <ImageView
+        android:layout_width="0dp"
+        android:layout_height="0dp" />
+      </ViewFlipper>
+
+      <ViewFlipper
+        android:id="@+id/c_p1"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inAnimation="@anim/operarius_widget_pill_from_left"
+        android:outAnimation="@anim/operarius_widget_pill_to_left">
+
+        <ImageView
+        android:layout_width="0dp"
+        android:layout_height="0dp" />
+
+        <ImageView
+        android:id="@+id/c_pr"
+        android:layout_width="70dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="@drawable/operarius_widget_seg_on" />
+      </ViewFlipper>
+
+      <ViewFlipper
+        android:id="@+id/c_lbl"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inAnimation="@anim/operarius_widget_label_in"
+        android:outAnimation="@anim/operarius_widget_label_out">
+
+      <LinearLayout
+      android:id="@+id/c_l0"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="horizontal">
+
+      <FrameLayout
+        android:id="@+id/c_t0"
+        android:layout_width="70dp"
+        android:layout_height="match_parent">
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center"
+          android:drawableStart="@drawable/operarius_widget_ic_seg_today"
+          android:drawablePadding="5dp"
+          android:drawableTint="#F4F4F6"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:text="Today"
+          android:textColor="#F4F4F6"
+          android:textSize="12sp"
+          android:textStyle="bold" />
+      </FrameLayout>
+
+      <FrameLayout
+        android:id="@+id/c_m0"
+        android:layout_width="70dp"
+        android:layout_height="match_parent">
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center"
+          android:drawableStart="@drawable/operarius_widget_ic_seg_month"
+          android:drawablePadding="5dp"
+          android:drawableTint="#8A8A92"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:text="Month"
+          android:textColor="#8A8A92"
+          android:textSize="12sp"
+          android:textStyle="bold" />
+      </FrameLayout>
+    </LinearLayout>
+
+      <LinearLayout
+      android:id="@+id/c_l1"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="horizontal">
+
+      <FrameLayout
+        android:id="@+id/c_t1"
+        android:layout_width="70dp"
+        android:layout_height="match_parent">
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center"
+          android:drawableStart="@drawable/operarius_widget_ic_seg_today"
+          android:drawablePadding="5dp"
+          android:drawableTint="#8A8A92"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:text="Today"
+          android:textColor="#8A8A92"
+          android:textSize="12sp"
+          android:textStyle="bold" />
+      </FrameLayout>
+
+      <FrameLayout
+        android:id="@+id/c_m1"
+        android:layout_width="70dp"
+        android:layout_height="match_parent">
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center"
+          android:drawableStart="@drawable/operarius_widget_ic_seg_month"
+          android:drawablePadding="5dp"
+          android:drawableTint="#F4F4F6"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:text="Month"
+          android:textColor="#F4F4F6"
+          android:textSize="12sp"
+          android:textStyle="bold" />
+      </FrameLayout>
+    </LinearLayout>
+      </ViewFlipper>
+    </FrameLayout>
+
+    <FrameLayout
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_weight="1" />
+
+    <ViewFlipper
+      android:id="@+id/c_act"
+      android:layout_width="wrap_content"
+      android:layout_height="match_parent"
+      android:inAnimation="@anim/operarius_widget_fade_in"
+      android:outAnimation="@anim/operarius_widget_fade_out">
+
+      <LinearLayout
+        android:id="@+id/c_a0"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:gravity="center_vertical|end"
+        android:orientation="horizontal">
+
+        <TextView
+        android:id="@+id/t_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginRight="10dp"
+        android:gravity="end"
+        android:includeFontPadding="false"
+        android:singleLine="true"
+        android:textColor="#C8C8CE"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+        <ImageView
+        android:id="@+id/t_add"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="@drawable/operarius_widget_plus_bg"
+        android:contentDescription="@string/operarius_widget_add"
+        android:padding="9dp"
+        android:src="@drawable/operarius_widget_ic_plus" />
+      </LinearLayout>
+
+      <LinearLayout
+        android:id="@+id/c_a1"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:gravity="center_vertical|end"
+        android:orientation="horizontal">
+
+        <TextView
+          android:id="@+id/m_today"
+          android:layout_width="wrap_content"
+          android:layout_height="26dp"
+          android:layout_marginRight="4dp"
+          android:background="@drawable/operarius_widget_pill"
+          android:gravity="center"
+          android:paddingLeft="10dp"
+          android:paddingRight="10dp"
+          android:text="@string/operarius_widget_today"
+          android:textColor="#4FD1C5"
+          android:textSize="11.5sp"
+          android:textStyle="bold"
+          android:visibility="gone" />
+
+        <ImageView
+          android:id="@+id/m_prev"
+          android:layout_width="30dp"
+          android:layout_height="30dp"
+          android:background="@drawable/operarius_widget_round"
+          android:contentDescription="@string/operarius_widget_prev"
+          android:padding="7dp"
+          android:src="@drawable/operarius_widget_ic_prev" />
+
+        <ImageView
+          android:id="@+id/m_next"
+          android:layout_width="30dp"
+          android:layout_height="30dp"
+          android:layout_marginLeft="4dp"
+          android:background="@drawable/operarius_widget_round"
+          android:contentDescription="@string/operarius_widget_next"
+          android:padding="7dp"
+          android:src="@drawable/operarius_widget_ic_next" />
+      </LinearLayout>
+    </ViewFlipper>
+  </LinearLayout>
+
+  <ViewFlipper
+    android:id="@+id/c_flip"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="10dp"
+    android:layout_weight="1"
+    android:inAnimation="@anim/operarius_widget_rise_in"
+    android:outAnimation="@anim/operarius_widget_sink_out">
+
+    <LinearLayout
+      android:id="@+id/c_today"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="vertical">
+
+      <LinearLayout
+        android:id="@+id/t_head"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="bottom"
+        android:orientation="horizontal"
+        android:paddingLeft="4dp">
+
+        <TextView
+          android:id="@+id/t_day"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:textColor="#F4F4F6"
+          android:textSize="17sp"
+          android:textStyle="bold" />
+
+        <TextView
+          android:id="@+id/t_date"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginLeft="7dp"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:textColor="#8A8A92"
+          android:textSize="12.5sp" />
+      </LinearLayout>
+
+      <include
+        layout="@layout/operarius_widget_today_body"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/c_month"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="vertical">
+
+      <LinearLayout
+        android:id="@+id/m_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="bottom"
+        android:orientation="horizontal"
+        android:paddingLeft="4dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+          android:id="@+id/m_month"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:textColor="#F4F4F6"
+          android:textSize="17sp"
+          android:textStyle="bold" />
+
+        <TextView
+          android:id="@+id/m_year"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginLeft="7dp"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:textColor="#8A8A92"
+          android:textSize="12.5sp" />
+      </LinearLayout>
+
+      <include
+        layout="@layout/operarius_widget_month_body"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+    </LinearLayout>
+  </ViewFlipper>
+</LinearLayout>

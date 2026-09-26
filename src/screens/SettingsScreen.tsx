@@ -31,7 +31,7 @@ const CATS: { id: Category; label: string; icon: keyof typeof Feather.glyphMap; 
   { id: 'general', label: 'General', icon: 'sliders', sub: 'Day window, week start, gaps' },
   { id: 'reminders', label: 'Reminders', icon: 'bell', sub: 'Defaults, alarm sound, reliability' },
   { id: 'calendar', label: 'Google Calendar', icon: 'calendar', sub: 'Sync tasks with your calendar' },
-  { id: 'widgets', label: 'Widgets', icon: 'grid', sub: 'Today and the month on your home screen' },
+  { id: 'widgets', label: 'Widgets', icon: 'grid', sub: 'Today, the month, or both in one' },
   { id: 'appearance', label: 'Appearance', icon: 'droplet', sub: 'Time format, colors & icons' },
   { id: 'motion', label: 'Animations', icon: 'wind', sub: 'On / off and speed' },
   { id: 'tags', label: 'Tags', icon: 'tag', sub: 'Tags, sub-tags & week dots' },

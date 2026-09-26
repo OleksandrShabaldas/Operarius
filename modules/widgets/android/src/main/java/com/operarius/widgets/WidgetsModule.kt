@@ -30,6 +30,7 @@ class WidgetsModule : Module() {
       mapOf(
         "today" to Refresh.ids(ctx, TodayWidget::class.java).size,
         "month" to Refresh.ids(ctx, MonthWidget::class.java).size,
+        "combo" to Refresh.ids(ctx, ComboWidget::class.java).size,
         "canPin" to (Build.VERSION.SDK_INT >= 26 && mgr.isRequestPinAppWidgetSupported),
       )
     }
@@ -40,7 +41,11 @@ class WidgetsModule : Module() {
       if (Build.VERSION.SDK_INT < 26) return@AsyncFunction false
       val mgr = AppWidgetManager.getInstance(ctx)
       if (!mgr.isRequestPinAppWidgetSupported) return@AsyncFunction false
-      val cls = if (kind == "month") MonthWidget::class.java else TodayWidget::class.java
+      val cls = when (kind) {
+        "month" -> MonthWidget::class.java
+        "combo" -> ComboWidget::class.java
+        else -> TodayWidget::class.java
+      }
       mgr.requestPinAppWidget(ComponentName(ctx, cls), null, null)
     }
   }

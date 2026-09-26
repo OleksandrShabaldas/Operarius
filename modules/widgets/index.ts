@@ -1,14 +1,14 @@
 import { NativeModule, requireOptionalNativeModule } from 'expo';
 
 // ---------------------------------------------------------------------------
-// Operarius widgets — the JS face of the Android module in ./android: two
-// home-screen widgets (today's timeline, and the month) drawn from what the
-// app hands over here. Anywhere the module isn't linked (web) every call is a
-// harmless no-op.
+// Operarius widgets — the JS face of the Android module in ./android: three
+// home-screen widgets (today's timeline, the month, and both in one with a
+// switch) drawn from what the app hands over here. Anywhere the module isn't
+// linked (web) every call is a harmless no-op.
 // ---------------------------------------------------------------------------
 
-export type WidgetKind = 'today' | 'month';
-export type WidgetStatus = { today: number; month: number; canPin: boolean };
+export type WidgetKind = 'today' | 'month' | 'combo';
+export type WidgetStatus = { today: number; month: number; combo: number; canPin: boolean };
 
 declare class WidgetsNative extends NativeModule {
   update(json: string): Promise<boolean>;
@@ -31,11 +31,12 @@ export async function update(json: string): Promise<boolean> {
 }
 
 export async function status(): Promise<WidgetStatus> {
-  if (!native) return { today: 0, month: 0, canPin: false };
+  if (!native) return { today: 0, month: 0, combo: 0, canPin: false };
   try {
-    return await native.status();
+    const st = await native.status();
+    return { ...st, combo: st.combo ?? 0 };
   } catch {
-    return { today: 0, month: 0, canPin: false };
+    return { today: 0, month: 0, combo: 0, canPin: false };
   }
 }
 

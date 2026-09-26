@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- …and the one leaving fades out as it drops back a touch. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+  android:interpolator="@android:interpolator/accelerate_cubic"
+  android:shareInterpolator="true">
+  <alpha
+    android:duration="180"
+    android:fromAlpha="1"
+    android:toAlpha="0" />
+  <translate
+    android:duration="180"
+    android:fromYDelta="0"
+    android:toYDelta="-1.5%" />
+</set>

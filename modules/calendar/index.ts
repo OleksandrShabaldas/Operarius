@@ -62,6 +62,7 @@ export type EventInput = {
   allDay: boolean;
   timeZone: string; // "" = the phone's zone
   rrule: string | null;
+  exdate?: string | null; // a recurring event's days taken out (EXDATE, one per line); null = leave the event's own
   appUri: string | null; // the app's own event: the task it shows
 };
 

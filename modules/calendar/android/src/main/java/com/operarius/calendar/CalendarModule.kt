@@ -39,6 +39,7 @@ class EventInput : Record {
   @Field var allDay: Boolean = false
   @Field var timeZone: String = "" // "" = the phone's zone
   @Field var rrule: String? = null // RFC 5545 rule; null = a single event
+  @Field var exdate: String? = null // a recurring event's days taken out (EXDATE); null = leave them as they are, "" = none
   @Field var appUri: String? = null // marks the event as the app's own (opens its task)
 }
 
@@ -420,6 +421,7 @@ class CalendarModule : Module() {
       putNull(Events.DTEND)
       put(Events.RRULE, rule)
       put(Events.DURATION, duration(start, end, e.allDay))
+      e.exdate?.let { if (it.isEmpty()) putNull(Events.EXDATE) else put(Events.EXDATE, it) }
     }
   }
 

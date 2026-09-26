@@ -9,8 +9,8 @@ import { motion, ms, sp } from '../motion';
 import { Snapshot, useApp } from '../store';
 import { dateKey, dateLabel, daysAgo, fmt, hexA } from '../utils';
 import { Backup, BackupError, backupName, buildBackup, cleanupPhotos, countsOf, pickBackup, saveFile, share } from '../backup';
-import { appEvents, removeAppEvents } from '../calendarSync';
-import { Task } from '../types';
+import { appEvents, removeAppEvents, syncedIds } from '../calendarSync';
+import { CalSeen, Task } from '../types';
 import { currentVersion } from '../updater';
 import { CenterPopup } from './Overlay';
 import { Appear, stagger, Tappable } from './anim';
@@ -36,7 +36,8 @@ function unlinkRemoved(s: Snapshot): Snapshot {
     return rest as Task;
   });
   const cal = s.settings.calendar;
-  return { tasks, settings: { ...s.settings, calendar: { ...cal, seen: cal.seen.filter((e) => !gone.has(e.k)) } } };
+  const keep = (seen: CalSeen[]) => seen.filter((e) => !gone.has(e.k));
+  return { tasks, settings: { ...s.settings, calendar: { ...cal, seen: keep(cal.seen), extra: cal.extra.map((e) => ({ ...e, seen: keep(e.seen) })) } } };
 }
 
 function when(iso: string | number, clock: '12h' | '24h'): string {
@@ -97,10 +98,10 @@ export function DataSettings() {
 
   const counts = countsOf(tasks, settings);
   const cal = settings.calendar;
-  const ownEvents = cal.on && cal.direction !== 'fromCalendar' ? appEvents(tasks, cal.calendarId).length : 0;
+  const ownEvents = cal.on && cal.direction !== 'fromCalendar' ? appEvents(tasks, syncedIds(cal)).length : 0;
 
   const wipe = async () => {
-    const removed = alsoEvents && ownEvents ? await removeAppEvents(tasks, cal.calendarId) : 0;
+    const removed = alsoEvents && ownEvents ? await removeAppEvents(tasks, syncedIds(cal)) : 0;
     const before = resetAll();
     setWiping(false);
     purge.current = true;

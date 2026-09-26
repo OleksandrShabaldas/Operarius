@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import * as Cal from '../modules/calendar';
-import type { CalEvent, CalInstance, EventInput } from '../modules/calendar';
+import type { CalEvent, CalInstance, DeviceCalendar, EventInput } from '../modules/calendar';
 import { occursOn } from './recurrence';
 import { localMs } from './reminders';
 import { EMOJIS } from './theme';
-import { CalendarSync, CalLink, CalSeen, Place, Repeat, RepeatFreq, Settings, Task } from './types';
+import { CalendarSync, CalExtra, CalLink, CalSeen, Place, Repeat, RepeatFreq, Settings, Task } from './types';
 import { addDays, dateFromKey, dateKey, genId } from './utils';
 
 // ---------------------------------------------------------------------------
-// Calendar sync — tasks ⇄ a calendar on the phone (a Google account's
-// calendars reach Google through the phone's own account sync).
+// Calendar sync — tasks ⇄ calendars on the phone (a Google account's
+// calendars reach Google through the phone's own account sync). Several can
+// sync at once: each is synced on its own (below), new tasks go to the main
+// one, and a task brought in from any of them goes back to the one it's from.
 //
 //  • A synced task carries a link (Task.cal) to its event: the event's id and
 //    fingerprints of both sides as of the last sync, so each sync can tell
@@ -50,8 +52,8 @@ export type SyncOutcome = {
   ops: SyncOps;
   patch: Partial<CalendarSync>;
   changes: { toCalendar: number; fromCalendar: number; removed: number };
-  // Set when the sync stopped before removing many tasks (see MASS).
-  held?: { count: number; titles: string[] };
+  // Set when a calendar's sync stopped before removing many tasks (see MASS).
+  held?: { count: number; titles: string[]; cal: string };
 };
 
 export const EMPTY_OPS: SyncOps = { create: [], update: [], link: [], remove: [] };
@@ -71,7 +73,7 @@ function hash(s: string): string {
 }
 
 // Everything the calendar sees of a task / an event, reduced to its meaning.
-type Face = { title: string; notes: string; allDay: boolean; date: string; start: number; dur: number; x: number; days: number; repeat: string };
+type Face = { title: string; notes: string; allDay: boolean; date: string; start: number; dur: number; x: number; days: number; repeat: string; skip?: string };
 const faceHash = (f: Face) => hash(JSON.stringify(f));
 
 const RDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
@@ -181,6 +183,8 @@ function faceOfTask(t: Task, lk?: CalLink | null): Face {
     x: allDay ? 0 : (lk?.x ?? 0),
     days: allDay ? span || 1 : 0,
     repeat: span ? '' : repeatKey(t.repeat, first),
+    // (only there when some are — every other task's fingerprint stays as it was)
+    ...(t.repeat && !span && t.skip?.length ? { skip: [...t.skip].sort().join(',') } : {}),
   };
 }
 
@@ -303,6 +307,15 @@ function taskIdOf(uri: string | null): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+// The days taken out of a repeating task, as the event's EXDATE (one per line,
+// as the phone writes them): each occurrence's start in UTC, or its day
+// (all-day). null when there are none — the event's own is then left alone.
+function exdates(t: Task): string | null {
+  if (!t.repeat || !t.skip?.length) return null;
+  const stamp = (d: string) => (t.type === 'allday' ? d.replace(/-/g, '') : new Date(localMs(d, t.start)).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''));
+  return [...t.skip].sort().map(stamp).join('\n');
+}
+
 // The event a task is written as.
 function eventOf(t: Task, lk?: CalLink | null, own = true): EventInput {
   const title = eventTitle(t);
@@ -312,11 +325,13 @@ function eventOf(t: Task, lk?: CalLink | null, own = true): EventInput {
     const span = spanDays(t, lk);
     const first = t.repeat && !span ? firstOccurrence(t) : t.date!;
     const s = utcMs(first);
-    return { title, description, start: s, end: s + (span || 1) * DAY, allDay: true, timeZone: 'UTC', rrule: t.repeat && !span ? toRRule(t.repeat, t.date!, true) : null, appUri: uri };
+    const rrule = t.repeat && !span ? toRRule(t.repeat, t.date!, true) : null;
+    return { title, description, start: s, end: s + (span || 1) * DAY, allDay: true, timeZone: 'UTC', rrule, exdate: rrule ? exdates(t) : null, appUri: uri };
   }
   const first = t.repeat ? firstOccurrence(t) : t.date!;
   const s = localMs(first, t.start);
-  return { title, description, start: s, end: localMs(first, t.start + t.dur + (lk?.x ?? 0)), allDay: false, timeZone: '', rrule: t.repeat ? toRRule(t.repeat, t.date!, false) : null, appUri: uri };
+  const rrule = t.repeat ? toRRule(t.repeat, t.date!, false) : null;
+  return { title, description, start: s, end: localMs(first, t.start + t.dur + (lk?.x ?? 0)), allDay: false, timeZone: '', rrule, exdate: rrule ? exdates(t) : null, appUri: uri };
 }
 
 // What a task is read from: an event, or one occurrence of one.
@@ -401,21 +416,77 @@ export class SyncError extends Error {
   }
 }
 
+type SyncOpts = { mass?: 'ask' | 'remove' | 'keep'; now?: number };
+
+// One calendar of a sync: the main one (new tasks are written to it) or another.
+type OneCal = { id: string; main: boolean; seen: CalSeen[]; ignored: string[] };
+type OneOutcome = {
+  ops: SyncOps;
+  state: Pick<CalExtra, 'seen' | 'ignored' | 'counts'>;
+  changes: SyncOutcome['changes'];
+  held?: { count: number; titles: string[] };
+};
+
 /**
- * Brings `tasks` and the chosen calendar in step, per the chosen direction.
- * Writes to the calendar directly; changes to the tasks come back as `ops`
+ * Brings `tasks` and the synced calendars in step, per the chosen direction.
+ * Writes to the calendars directly; changes to the tasks come back as `ops`
  * (applied by the caller onto the then-current tasks). `mass`: what to do when
- * many tasks would be removed at once ('ask' stops and reports them).
+ * many tasks would be removed at once ('ask' stops that calendar and reports them).
  */
-export async function runCalendarSync(tasks: Task[], settings: Settings, opts: { mass?: 'ask' | 'remove' | 'keep'; now?: number } = {}): Promise<SyncOutcome> {
+export async function runCalendarSync(tasks: Task[], settings: Settings, opts: SyncOpts = {}): Promise<SyncOutcome> {
   const cfg = settings.calendar;
-  const cal = cfg.calendarId;
-  if (!cal) throw new SyncError('Pick a calendar to sync with');
+  if (!cfg.calendarId) throw new SyncError('Pick a calendar to sync with');
   if ((await Cal.permission()) !== 'granted') throw new SyncError('Operarius isn’t allowed to use your calendar');
   const list = await Cal.calendars();
-  const target = list.find((c) => c.id === cal);
-  if (!target) throw new SyncError(`“${cfg.calendarName || 'The calendar'}” is no longer on this phone`);
+  const main = list.find((c) => c.id === cfg.calendarId);
+  if (!main) throw new SyncError(`“${cfg.calendarName || 'The calendar'}” is no longer on this phone`);
 
+  // The other calendars first: a task restored from a backup that came from one
+  // of them is matched to its event there, before the main calendar would take
+  // it for a new task.
+  const extras = cfg.extra.filter((e) => e.id !== main.id);
+  const ones: OneCal[] = [...extras.map((e) => ({ id: e.id, main: false, seen: e.seen, ignored: e.ignored })), { id: main.id, main: true, seen: cfg.seen, ignored: cfg.ignored }];
+  // (a calendar that's gone missing for now keeps its tasks' links)
+  const synced = new Set(ones.map((o) => o.id));
+
+  let cur = tasks;
+  const ops: SyncOps = { create: [], update: [], link: [], remove: [] };
+  const changes = { toCalendar: 0, fromCalendar: 0, removed: 0 };
+  let held: SyncOutcome['held'];
+  const extra: CalExtra[] = [];
+  let mainState: Partial<CalendarSync> = {};
+  for (const one of ones) {
+    const kept = extras.find((e) => e.id === one.id);
+    const target = list.find((c) => c.id === one.id);
+    if (!target) {
+      if (kept) extra.push(kept);
+      continue;
+    }
+    const r = await syncOne(cur, settings, one, target, synced, opts);
+    if (r.held) {
+      held ??= { ...r.held, cal: target.name };
+      if (kept) extra.push(kept);
+      continue;
+    }
+    ops.create.push(...r.ops.create);
+    ops.update.push(...r.ops.update);
+    ops.link.push(...r.ops.link);
+    ops.remove.push(...r.ops.remove);
+    cur = applyOps(cur, r.ops);
+    changes.toCalendar += r.changes.toCalendar;
+    changes.fromCalendar += r.changes.fromCalendar;
+    changes.removed += r.changes.removed;
+    const about = { name: target.name, account: target.account, color: target.color };
+    if (one.main) mainState = { ...r.state, calendarName: about.name, account: about.account, color: about.color };
+    else extra.push({ ...kept!, ...r.state, ...about });
+  }
+  return { ops, patch: { lastSync: opts.now ?? Date.now(), lastError: null, ...mainState, extra }, changes, ...(held ? { held } : {}) };
+}
+
+/** Brings `tasks` and one calendar in step (see runCalendarSync). */
+async function syncOne(tasks: Task[], settings: Settings, one: OneCal, target: DeviceCalendar, synced: Set<string>, opts: SyncOpts): Promise<OneOutcome> {
+  const cfg = settings.calendar;
+  const cal = one.id;
   const now = opts.now ?? Date.now();
   const mass = opts.mass ?? 'ask';
   const dir = cfg.direction;
@@ -428,23 +499,26 @@ export async function runCalendarSync(tasks: Task[], settings: Settings, opts: {
   const known = [...new Set([...settings.emojis, ...EMOJIS])].filter((e) => EMOJI_ANY.test(e));
   const ops: SyncOps = { create: [], update: [], link: [], remove: [] };
   const changes = { toCalendar: 0, fromCalendar: 0, removed: 0 };
-  const ignored = new Set(cfg.ignored);
+  const ignored = new Set(one.ignored);
   const keptSeen: CalSeen[] = []; // deletions still to be carried out (kept for the next sync)
 
   const syncable = (t: Task) => t.type !== 'todo' && !!t.date;
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
-  // Links on this calendar; others (another calendar, or a task that can no
-  // longer be an event, e.g. turned into a to-do) are dropped — the latter then
-  // counts as deleted here.
+  // Links on this calendar. A task that can no longer be an event (e.g. turned
+  // into a to-do) drops its link — it then counts as deleted here; so do links
+  // to a calendar no longer synced (dropped once, by the main calendar's sync).
+  // Links to the other synced calendars are theirs.
   const linked: Task[] = [];
   for (const t of tasks) {
     if (!t.cal) continue;
-    if (t.cal.c !== cal || !syncable(t)) ops.link.push({ id: t.id, cal: undefined });
-    else linked.push(t);
+    if (t.cal.c === cal) {
+      if (syncable(t)) linked.push(t);
+      else ops.link.push({ id: t.id, cal: undefined });
+    } else if (one.main && !synced.has(t.cal.c)) ops.link.push({ id: t.id, cal: undefined });
   }
   const linkKeys = new Set(linked.map((t) => t.cal!.key));
-  const goneHere = cfg.seen.filter((s) => !linkKeys.has(s.k));
+  const goneHere = one.seen.filter((s) => !linkKeys.has(s.k));
   const goneKeys = new Set(goneHere.map((s) => s.k));
 
   // Events that belong to linked tasks (or are being removed): their
@@ -490,7 +564,7 @@ export async function runCalendarSync(tasks: Task[], settings: Settings, opts: {
     if (t && syncable(t) && !t.cal && !adopt.has(t.id)) {
       adopt.set(t.id, { t, id: evId, own: true });
       adoptedEvents.add(evId);
-    } else if (!t || !syncable(t) || (t.cal && t.cal.c === cal && t.cal.id !== evId)) orphans.push(evId);
+    } else if (!t || !syncable(t) || (t.cal && (t.cal.c !== cal || t.cal.id !== evId))) orphans.push(evId); // (its task is now another event's)
   }
   const sigT = (t: Task) => {
     const f = faceOfTask(t);
@@ -698,8 +772,8 @@ export async function runCalendarSync(tasks: Task[], settings: Settings, opts: {
     }
   }
 
-  // 6. New tasks → new events (from two weeks back on).
-  if (write) {
+  // 6. New tasks → new events (from two weeks back on) — in the main calendar.
+  if (write && one.main) {
     for (const t of tasks) {
       if (t.cal || !syncable(t) || adopt.has(t.id)) continue;
       if (t.repeat ? t.repeat.endDate && t.repeat.endDate < winFrom : t.date! < winFrom) continue;
@@ -725,7 +799,7 @@ export async function runCalendarSync(tasks: Task[], settings: Settings, opts: {
     if (mass === 'ask') {
       return {
         ops: EMPTY_OPS,
-        patch: { lastError: null },
+        state: { seen: one.seen, ignored: one.ignored, counts: { toCalendar: 0, fromCalendar: 0 } },
         changes: { toCalendar: 0, fromCalendar: 0, removed: 0 },
         held: { count: removals.length, titles: removals.slice(0, 3).map((t) => t.title) },
       };
@@ -766,20 +840,7 @@ export async function runCalendarSync(tasks: Task[], settings: Settings, opts: {
 
   const keepIgnored = [...ignored].slice(-2000); // (the oldest go first)
 
-  return {
-    ops,
-    patch: {
-      lastSync: now,
-      lastError: null,
-      seen,
-      ignored: keepIgnored,
-      counts: { toCalendar: toCount, fromCalendar: fromCount },
-      color: target.color,
-      calendarName: target.name,
-      account: target.account,
-    },
-    changes,
-  };
+  return { ops, state: { seen, ignored: keepIgnored, counts: { toCalendar: toCount, fromCalendar: fromCount } }, changes };
 }
 
 /** Applies a sync's changes onto the current tasks (unchanged array when there are none). */
@@ -816,19 +877,22 @@ export function applyOps(prev: Task[], ops: SyncOps): Task[] {
   return changed || fresh.length ? [...out, ...fresh] : prev;
 }
 
-/** The events the app itself put in the calendar (not the calendar's own, brought in as tasks). */
-export function appEvents(tasks: Task[], calendarId: string | null): Task[] {
-  return calendarId ? tasks.filter((t) => t.cal && t.cal.c === calendarId && !t.cal.from && !t.cal.master) : [];
+/** The synced calendars: the main one, then the others. */
+export const syncedIds = (cfg: CalendarSync): string[] => (cfg.calendarId ? [cfg.calendarId, ...cfg.extra.map((e) => e.id).filter((id) => id !== cfg.calendarId)] : []);
+
+/** The events the app itself put in those calendars (not their own, brought in as tasks). */
+export function appEvents(tasks: Task[], calendarIds: string[]): Task[] {
+  return tasks.filter((t) => t.cal && calendarIds.includes(t.cal.c) && !t.cal.from && !t.cal.master);
 }
 
-/** Removes them from the calendar (e.g. when all data is deleted). Resolves to how many went. */
-export async function removeAppEvents(tasks: Task[], calendarId: string | null): Promise<number> {
+/** Removes them from the calendars (e.g. when all data is deleted). Resolves to how many went. */
+export async function removeAppEvents(tasks: Task[], calendarIds: string[]): Promise<number> {
   let n = 0;
-  for (const t of appEvents(tasks, calendarId)) if (await Cal.remove(t.cal!.id).catch(() => false)) n++;
+  for (const t of appEvents(tasks, calendarIds)) if (await Cal.remove(t.cal!.id).catch(() => false)) n++;
   return n;
 }
 
-/** Switching calendars: the app's own events move along; tasks brought in from the old one go. */
+/** Switching calendars (or no longer syncing one): the app's own events move along; tasks brought in from the old one go. */
 export function planSwitch(tasks: Task[], oldCal: string | null): { moving: Task[]; leaving: Task[] } {
   const moving: Task[] = [];
   const leaving: Task[] = [];
@@ -914,6 +978,7 @@ export function useCalendarSync(opts: { loaded: boolean; tasks: Task[]; settings
   const sig = useRef<string | null>(null);
   const cfg = settings.calendar;
   const on = loaded && Cal.available && cfg.on && !!cfg.calendarId;
+  const extraKey = cfg.extra.map((e) => e.id).join(',');
 
   const run = async (o: { mass?: 'remove' | 'keep'; refresh?: boolean } = {}) => {
     const { settings: s } = latest.current;
@@ -935,7 +1000,7 @@ export function useCalendarSync(opts: { loaded: boolean; tasks: Task[]; settings
     }
     running.current = true;
     setStatus({ busy: true });
-    if (o.refresh) Cal.refresh(s.calendar.calendarId);
+    if (o.refresh) for (const id of syncedIds(s.calendar)) Cal.refresh(id);
     try {
       const { tasks: ts } = latest.current;
       sig.current = syncSig(ts);
@@ -958,11 +1023,11 @@ export function useCalendarSync(opts: { loaded: boolean; tasks: Task[]; settings
   const runRef = useRef(run);
   runRef.current = run;
 
-  // Turned on, another calendar or direction: sync now.
+  // Turned on, another calendar (or one more) or direction: sync now.
   useEffect(() => {
     if (!on) return;
     runRef.current({ refresh: true });
-  }, [on, cfg.calendarId, cfg.direction]);
+  }, [on, cfg.calendarId, cfg.direction, extraKey]);
 
   // Tasks changed here: sync a few seconds later (edits come in bursts).
   useEffect(() => {

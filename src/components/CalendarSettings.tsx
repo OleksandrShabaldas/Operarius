@@ -20,7 +20,7 @@ import type { DeviceCalendar } from '../../modules/calendar';
 import { C } from '../theme';
 import { motion, ms, sp } from '../motion';
 import { useApp } from '../store';
-import { CalDirection } from '../types';
+import { CalDirection, CalExtra } from '../types';
 import { dateLabel, dateKey, fmt, hexA } from '../utils';
 import { AHEAD_DAYS, applySwitch, CAL_EMOJI, PAST_DAYS, planSwitch, requestCalendarSync, useCalendarStatus } from '../calendarSync';
 import { Toggle } from './MotionSettings';
@@ -84,7 +84,9 @@ export function CalendarSettings() {
   const status = useCalendarStatus();
   const [perm, setPerm] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [cals, setCals] = useState<DeviceCalendar[] | null>(null);
-  const [confirm, setConfirm] = useState<{ to: DeviceCalendar; moving: number; leaving: number } | null>(null);
+  // Stopping syncing a calendar: what happens to its tasks (and, for the main one, where new tasks go next).
+  const [confirm, setConfirm] = useState<{ drop: DeviceCalendar; moving: number; leaving: number; next: CalExtra | null } | null>(null);
+  const [mainNote, setMainNote] = useState(0); // the main calendar tapped while it's the only one
   const [, tick] = useState(0);
 
   const load = useCallback(async () => {
@@ -108,6 +110,9 @@ export function CalendarSettings() {
 
   const current = cals?.find((c) => c.id === cfg.calendarId) ?? null;
   const readOnly = !!current && !current.writable;
+  const synced = (c: DeviceCalendar) => c.id === cfg.calendarId || cfg.extra.some((e) => e.id === c.id);
+  const syncedCals = cals?.filter(synced) ?? [];
+  const counts = cfg.extra.reduce((n, e) => ({ toCalendar: n.toCalendar + e.counts.toCalendar, fromCalendar: n.fromCalendar + e.counts.fromCalendar }), cfg.counts);
 
   const groups = useMemo(() => {
     if (!cals) return [];
@@ -165,30 +170,56 @@ export function CalendarSettings() {
     } else Linking.openSettings().catch(() => {});
   };
 
-  const doSwitch = async (to: DeviceCalendar) => {
-    const plan = planSwitch(tasks, cfg.calendarId);
-    const old = cals?.find((c) => c.id === cfg.calendarId);
-    const ops = await applySwitch(plan, !!old?.writable && cfg.direction !== 'fromCalendar');
-    applyCalendarSync(ops, {
-      calendarId: to.id,
-      calendarName: to.name,
-      account: to.account,
-      color: to.color,
-      direction: to.writable ? cfg.direction : 'fromCalendar',
-      seen: [],
-      ignored: [],
-      lastSync: null,
-      lastError: null,
-      counts: { toCalendar: 0, fromCalendar: 0 },
-    });
+  // The main calendar's state, as one of the others (and back).
+  const asExtra = (): CalExtra => ({ id: cfg.calendarId!, name: cfg.calendarName, account: cfg.account, color: cfg.color, seen: cfg.seen, ignored: cfg.ignored, counts: cfg.counts });
+  const asMain = (e: CalExtra, writable: boolean) => ({
+    calendarId: e.id,
+    calendarName: e.name,
+    account: e.account,
+    color: e.color,
+    seen: e.seen,
+    ignored: e.ignored,
+    counts: e.counts,
+    direction: writable ? cfg.direction : ('fromCalendar' as CalDirection),
+  });
+  const writableId = (id: string) => !!cals?.find((c) => c.id === id)?.writable;
+
+  // New tasks go to another synced calendar (the old main one keeps syncing, as one of the others).
+  const makeMain = (c: DeviceCalendar) => {
+    if (c.id === cfg.calendarId || !cfg.calendarId) return;
+    const e = cfg.extra.find((x) => x.id === c.id);
+    if (!e) return;
+    Haptics.selectionAsync().catch(() => {});
+    updateCalendar({ ...asMain(e, c.writable), extra: [...cfg.extra.filter((x) => x.id !== c.id), asExtra()], lastError: null });
   };
 
-  const pick = (c: DeviceCalendar) => {
-    if (c.id === cfg.calendarId) return;
+  // No longer syncing one: the app's own events there move to the main
+  // calendar, tasks brought in from it leave (their events stay there).
+  const doDrop = async (c: DeviceCalendar, next: CalExtra | null) => {
+    const ops = await applySwitch(planSwitch(tasks, c.id), c.writable && cfg.direction !== 'fromCalendar');
+    if (c.id !== cfg.calendarId) applyCalendarSync(ops, { extra: cfg.extra.filter((e) => e.id !== c.id) });
+    else if (next) applyCalendarSync(ops, { ...asMain(next, writableId(next.id)), extra: cfg.extra.filter((e) => e.id !== next.id), lastError: null });
+  };
+
+  // A calendar tapped: synced too — or, when it is, no longer (asking first when it has tasks here).
+  const toggle = (c: DeviceCalendar) => {
+    if (!synced(c)) {
+      Haptics.selectionAsync().catch(() => {});
+      updateCalendar({ extra: [...cfg.extra, { id: c.id, name: c.name, account: c.account, color: c.color, seen: [], ignored: [], counts: { toCalendar: 0, fromCalendar: 0 } }] });
+      return;
+    }
+    const isMain = c.id === cfg.calendarId;
+    // The main one hands over to another (a writable one if there is), or stays if it's the only one.
+    const next = isMain ? (cfg.extra.find((e) => writableId(e.id)) ?? cfg.extra[0] ?? null) : null;
+    if (isMain && !next) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      setMainNote((n) => n + 1);
+      return;
+    }
     Haptics.selectionAsync().catch(() => {});
-    const plan = planSwitch(tasks, cfg.calendarId);
-    if (plan.moving.length || plan.leaving.length) setConfirm({ to: c, moving: plan.moving.length, leaving: plan.leaving.length });
-    else doSwitch(c);
+    const plan = planSwitch(tasks, c.id);
+    if (plan.moving.length || plan.leaving.length || isMain) setConfirm({ drop: c, moving: plan.moving.length, leaving: plan.leaving.length, next });
+    else doDrop(c, next);
   };
 
   const setDir = (d: CalDirection) => {
@@ -214,7 +245,7 @@ export function CalendarSettings() {
           : cfg.lastError
             ? 'Paused — see below'
             : cfg.lastSync
-              ? `${cfg.calendarName || 'Calendar'} · synced ${ago(cfg.lastSync, settings.clock)}`
+              ? `${cfg.calendarName || 'Calendar'}${cfg.extra.length ? ` + ${cfg.extra.length} more` : ''} · synced ${ago(cfg.lastSync, settings.clock)}`
               : cfg.calendarId
                 ? `${cfg.calendarName} · starting…`
                 : 'Pick a calendar below';
@@ -286,7 +317,7 @@ export function CalendarSettings() {
               <Feather name="alert-triangle" size={17} color="#f5a15c" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.bannerTitle}>
-                  {status.held.count} events are gone from {cfg.calendarName}
+                  {status.held.count} events are gone from {status.held.cal || cfg.calendarName}
                 </Text>
                 <Text style={styles.bannerSub}>
                   {status.held.titles.map((t) => `“${t}”`).join(', ')}
@@ -308,9 +339,9 @@ export function CalendarSettings() {
           <Text style={styles.section}>STATUS</Text>
           <Appear from="up" delay={40} style={styles.card}>
             <View style={styles.statRow}>
-              <Stat value={cfg.counts.toCalendar} label={`task${cfg.counts.toCalendar === 1 ? '' : 's'} in the calendar`} color={C.accentB} />
+              <Stat value={counts.toCalendar} label={`task${counts.toCalendar === 1 ? '' : 's'} in ${cfg.extra.length ? 'calendars' : 'the calendar'}`} color={C.accentB} />
               <View style={styles.statSep} />
-              <Stat value={cfg.counts.fromCalendar} label={`event${cfg.counts.fromCalendar === 1 ? '' : 's'} brought in`} color={cfg.color || C.accentA} />
+              <Stat value={counts.fromCalendar} label={`event${counts.fromCalendar === 1 ? '' : 's'} brought in`} color={cfg.color || C.accentA} />
             </View>
             <View style={styles.divider} />
             <View style={styles.syncRow}>
@@ -332,8 +363,8 @@ export function CalendarSettings() {
             </View>
           </Appear>
 
-          {/* Calendar */}
-          <Text style={styles.section}>CALENDAR</Text>
+          {/* Calendars: any number synced; the main one gets the new tasks */}
+          <Text style={styles.section}>CALENDARS</Text>
           {cals == null ? (
             <Appear from="up" delay={60} style={[styles.card, styles.loading]}>
               <Text style={styles.empty}>Looking for calendars…</Text>
@@ -361,11 +392,47 @@ export function CalendarSettings() {
                   {!g.google && g.key === '\u0000local' && <Text style={styles.groupNote}>not synced to Google</Text>}
                 </View>
                 {g.list.map((c, i) => (
-                  <CalRow key={c.id} c={c} on={c.id === cfg.calendarId} delay={90 + gi * 50 + i * 30} last={i === g.list.length - 1} onPress={() => pick(c)} />
+                  <CalRow key={c.id} c={c} on={synced(c)} main={c.id === cfg.calendarId && cfg.extra.length > 0} delay={90 + gi * 50 + i * 30} last={i === g.list.length - 1} onPress={() => toggle(c)} />
                 ))}
               </Appear>
             ))
           )}
+          {!!cals?.length && (
+            <Appear key={`n-${mainNote}`} from="up" style={styles.note}>
+              <Feather name={mainNote ? 'info' : 'layers'} size={14} color={mainNote ? '#f5a15c' : C.muted} />
+              <Text style={styles.noteTxt}>
+                {mainNote
+                  ? 'It’s the only calendar synced — to stop syncing, turn sync off above.'
+                  : 'Tap calendars to sync them too: events from each come in as tasks, and edits go back where they came from.'}
+              </Text>
+            </Appear>
+          )}
+
+          {/* Where new tasks go, once there's a choice */}
+          {syncedCals.length > 1 && (
+            <>
+              <Text style={styles.section}>NEW TASKS GO TO</Text>
+              <Appear from="up" delay={40} style={styles.mainRow}>
+                {syncedCals.map((c) => {
+                  const on = c.id === cfg.calendarId;
+                  return (
+                    <Tappable key={c.id} disabled={!c.writable} onPress={() => makeMain(c)} scaleTo={0.95} style={[styles.mainChip, on && { backgroundColor: hexA(c.color, 0.16), boxShadow: `inset 0 0 0 1.5px ${hexA(c.color, 0.55)}` }, !c.writable && { opacity: 0.4 }]}>
+                      <View style={[styles.mainDot, { backgroundColor: c.color }]} />
+                      <Text style={[styles.mainTxt, on && { color: C.text }]} numberOfLines={1}>
+                        {c.name}
+                      </Text>
+                      {on && (
+                        <Appear from="pop">
+                          <Feather name="check" size={13} color={c.color} />
+                        </Appear>
+                      )}
+                    </Tappable>
+                  );
+                })}
+              </Appear>
+            </>
+          )}
+
           {current && !isGoogle(current) && (
             <Appear key={`ng-${current.id}`} from="up" style={styles.note}>
               <Feather name="info" size={14} color={C.muted} />
@@ -405,16 +472,22 @@ export function CalendarSettings() {
       <CenterPopup open={!!confirm} onClose={() => setConfirm(null)}>
         {confirm && (
           <>
-            <Appear from="pop" style={[styles.popIcon, { backgroundColor: hexA(confirm.to.color, 0.16) }]}>
-              <Feather name="calendar" size={22} color={confirm.to.color} />
+            <Appear from="pop" style={[styles.popIcon, { backgroundColor: hexA(confirm.drop.color, 0.16) }]}>
+              <Feather name="calendar" size={22} color={confirm.drop.color} />
             </Appear>
-            <Text style={styles.popTitle}>Sync with “{confirm.to.name}”?</Text>
+            <Text style={styles.popTitle}>Stop syncing “{confirm.drop.name}”?</Text>
             <View style={{ gap: 8, marginTop: 4 }}>
+              {!!confirm.next && (
+                <Appear from="up" delay={40} style={styles.popLine}>
+                  <Feather name="inbox" size={14} color={C.accentB} />
+                  <Text style={styles.popLineTxt}>New tasks go to “{confirm.next.name}” from now on.</Text>
+                </Appear>
+              )}
               {confirm.moving > 0 && (
                 <Appear from="up" delay={60} style={styles.popLine}>
                   <Feather name="arrow-right" size={14} color={C.accentB} />
                   <Text style={styles.popLineTxt}>
-                    {confirm.moving} task{confirm.moving === 1 ? '' : 's'} move{confirm.moving === 1 ? 's' : ''} from “{cfg.calendarName}” to “{confirm.to.name}”.
+                    {confirm.moving} task{confirm.moving === 1 ? '' : 's'} move{confirm.moving === 1 ? 's' : ''} from “{confirm.drop.name}” to “{confirm.next?.name ?? cfg.calendarName}”.
                   </Text>
                 </Appear>
               )}
@@ -422,7 +495,7 @@ export function CalendarSettings() {
                 <Appear from="up" delay={100} style={styles.popLine}>
                   <Feather name="minus-circle" size={14} color={C.danger} />
                   <Text style={styles.popLineTxt}>
-                    {confirm.leaving} task{confirm.leaving === 1 ? '' : 's'} brought in from “{cfg.calendarName}” {confirm.leaving === 1 ? 'is' : 'are'} removed here (the events stay there).
+                    {confirm.leaving} task{confirm.leaving === 1 ? '' : 's'} brought in from “{confirm.drop.name}” {confirm.leaving === 1 ? 'is' : 'are'} removed here (the events stay there).
                   </Text>
                 </Appear>
               )}
@@ -432,14 +505,14 @@ export function CalendarSettings() {
                 <Text style={styles.popCancelTxt}>Cancel</Text>
               </Tappable>
               <Tappable
-                style={[styles.popOk, { backgroundColor: confirm.to.color }]}
+                style={[styles.popOk, { backgroundColor: confirm.drop.color }]}
                 onPress={() => {
-                  const to = confirm.to;
+                  const { drop, next } = confirm;
                   setConfirm(null);
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                  doSwitch(to);
+                  doDrop(drop, next);
                 }}>
-                <Text style={styles.popOkTxt}>Switch</Text>
+                <Text style={styles.popOkTxt}>Stop syncing</Text>
               </Tappable>
             </View>
           </>
@@ -503,7 +576,7 @@ function SyncButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
   );
 }
 
-function CalRow({ c, on, delay, last, onPress }: { c: DeviceCalendar; on: boolean; delay: number; last: boolean; onPress: () => void }) {
+function CalRow({ c, on, main, delay, last, onPress }: { c: DeviceCalendar; on: boolean; main: boolean; delay: number; last: boolean; onPress: () => void }) {
   const v = useSharedValue(on ? 1 : 0);
   useEffect(() => {
     v.value = withSpring(on ? 1 : 0, sp({ damping: 16, stiffness: 240 }));
@@ -519,9 +592,16 @@ function CalRow({ c, on, delay, last, onPress }: { c: DeviceCalendar; on: boolea
         <Animated.View style={[styles.calRow, !last && styles.calRowLine, bg]}>
           <Animated.View style={[styles.calDot, { backgroundColor: c.color, boxShadow: `0 0 0 3px ${hexA(c.color, 0.22)}` }, ring]} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.calName, !c.visible && { color: C.textDim }]} numberOfLines={1}>
-              {c.name}
-            </Text>
+            <View style={styles.calNameRow}>
+              <Text style={[styles.calName, !c.visible && { color: C.textDim }]} numberOfLines={1}>
+                {c.name}
+              </Text>
+              {main && (
+                <Appear from="pop" style={[styles.mainBadge, { backgroundColor: hexA(c.color, 0.18) }]}>
+                  <Text style={[styles.mainBadgeTxt, { color: c.color }]}>MAIN</Text>
+                </Appear>
+              )}
+            </View>
             {(!c.writable || !c.visible || c.primary) && (
               <View style={styles.calMeta}>
                 {c.primary && <Text style={styles.calMetaTxt}>Main calendar</Text>}
@@ -709,7 +789,7 @@ const styles = StyleSheet.create({
   calRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 8, marginHorizontal: -6, borderRadius: 12 },
   calRowLine: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
   calDot: { width: 12, height: 12, borderRadius: 6, marginLeft: 3 },
-  calName: { fontSize: 14.5, fontWeight: '700', color: C.text },
+  calName: { flexShrink: 1, fontSize: 14.5, fontWeight: '700', color: C.text },
   calMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   calMetaTxt: { fontSize: 11.5, color: C.muted, fontWeight: '600' },
   calCheck: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
@@ -741,6 +821,13 @@ const styles = StyleSheet.create({
   flowDot: { position: 'absolute', top: 0, left: 0, width: 4, height: 4, borderRadius: 2 },
   legend: { flexDirection: 'row', gap: 10, paddingVertical: 10, paddingHorizontal: 2 },
   legendTxt: { flex: 1, fontSize: 12.5, color: C.textDim, lineHeight: 17 },
+  calNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  mainBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  mainBadgeTxt: { fontSize: 9.5, fontWeight: '900', letterSpacing: 0.5 },
+  mainRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  mainChip: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', maxWidth: '100%' },
+  mainDot: { width: 9, height: 9, borderRadius: 5 },
+  mainTxt: { fontSize: 13.5, fontWeight: '700', color: C.textDim, flexShrink: 1 },
   popIcon: { alignSelf: 'center', width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   popTitle: { fontSize: 17, fontWeight: '800', color: C.text, textAlign: 'center', marginBottom: 12 },
   popLine: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', padding: 11, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)' },

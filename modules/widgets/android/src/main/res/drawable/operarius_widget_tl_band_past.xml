@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The band's part already behind the now line (tinted grey in code): only its top corner rounds. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#FFFFFFFF" />
+  <corners
+    android:bottomLeftRadius="0dp"
+    android:bottomRightRadius="0dp"
+    android:topLeftRadius="14dp"
+    android:topRightRadius="0dp" />
+</shape>

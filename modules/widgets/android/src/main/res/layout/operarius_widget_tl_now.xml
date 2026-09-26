@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The moment "now", ahead of what is still to come. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="22dp">
+
+  <ImageView
+    android:layout_width="match_parent"
+    android:layout_height="1.5dp"
+    android:layout_gravity="center_vertical"
+    android:layout_marginRight="2dp"
+    android:background="#CCFF5A5F" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <!-- (the time sits at the line's start, over it, as in the app) -->
+    <FrameLayout
+      android:layout_width="42dp"
+      android:layout_height="match_parent">
+
+      <TextClock
+        android:id="@+id/n_clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:background="@drawable/operarius_widget_tl_clock"
+        android:includeFontPadding="false"
+        android:paddingLeft="3dp"
+        android:paddingTop="1.5dp"
+        android:paddingRight="3dp"
+        android:paddingBottom="1.5dp"
+        android:textColor="#FF5A5F"
+        android:textSize="10.5sp"
+        android:textStyle="bold"
+        android:fontFeatureSettings="tnum"
+        android:format12Hour="h:mm"
+        android:format24Hour="HH:mm"
+        android:singleLine="true" />
+    </FrameLayout>
+
+    <ImageView
+      android:layout_width="9dp"
+      android:layout_height="9dp"
+      android:layout_marginLeft="10.5dp"
+      android:src="@drawable/operarius_widget_tl_dot" />
+  </LinearLayout>
+</FrameLayout>

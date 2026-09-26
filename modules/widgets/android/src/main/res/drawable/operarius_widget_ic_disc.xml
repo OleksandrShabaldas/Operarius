@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- A done task's check: a filled disc (tinted with the task's colour)… -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-  <solid android:color="#FF5A5F" />
+  <solid android:color="#FFFFFFFF" />
 </shape>

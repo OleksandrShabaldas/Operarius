@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.text.SpannableString
 import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import org.json.JSONObject
 import java.util.Calendar
@@ -20,7 +21,10 @@ internal class WTask(
   val dur: Int,
   val done: Boolean,
   val starred: Boolean,
-  val sub: String, // "30 min · Work · Office"
+  val tag: String, // its tag as the app shows it ("💼 Work"), or ""
+  val tagColor: Int?, // that tag's colour
+  val place: String, // its place's name, or ""
+  val subs: String, // "1/3" of its subtasks done, or "" without any
 )
 
 /** A task chip in the month grid. */
@@ -38,6 +42,9 @@ internal class WDay(val total: Int, val chips: List<WChip>)
 internal class Snapshot(
   val clock24: Boolean,
   val mondayFirst: Boolean,
+  val dayStart: Int, // the day's window (Settings → General), minutes from midnight
+  val dayEnd: Int,
+  val gap: Int, // longer gaps are free time on the timeline, shorter ones a chip
   val days: Map<String, List<WTask>>,
   val month: Map<String, WDay>,
 ) {
@@ -86,7 +93,10 @@ internal class Snapshot(
               dur = t.optInt("d"),
               done = t.optInt("x") == 1,
               starred = t.optInt("st") == 1,
-              sub = t.optString("sub"),
+              tag = t.optString("tg"),
+              tagColor = t.optString("tc").takeIf { it.isNotEmpty() }?.let { color(it) },
+              place = t.optString("pl"),
+              subs = t.optString("sb"),
             )
           }
         }
@@ -103,7 +113,15 @@ internal class Snapshot(
           month[k] = WDay(day.optInt("n", chips.size), chips)
         }
       }
-      return Snapshot(o.optBoolean("clock24", true), o.optString("weekStart", "mon") != "sun", days, month)
+      return Snapshot(
+        clock24 = o.optBoolean("clock24", true),
+        mondayFirst = o.optString("weekStart", "mon") != "sun",
+        dayStart = o.optInt("dayStart", 7 * 60),
+        dayEnd = o.optInt("dayEnd", 23 * 60),
+        gap = o.optInt("gap", 15),
+        days = days,
+        month = month,
+      )
     }
   }
 }
@@ -134,6 +152,21 @@ internal object Days {
     val s = String.format(Locale.US, "%d:%02d %s", if (h % 12 == 0) 12 else h % 12, mm, if (h < 12) "AM" else "PM")
     return SpannableString(s).apply { setSpan(RelativeSizeSpan(0.72f), s.length - 3, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
   }
+
+  /** A start time for the timeline's gutter: "09:30", or "9:30" over a smaller, fainter "AM". */
+  fun gutter(min: Int, clock24: Boolean): CharSequence {
+    if (clock24) return time(min, true)
+    val m = ((min % 1440) + 1440) % 1440
+    val h = m / 60
+    val s = String.format(Locale.US, "%d:%02d\n%s", if (h % 12 == 0) 12 else h % 12, m % 60, if (h < 12) "AM" else "PM")
+    return SpannableString(s).apply {
+      setSpan(RelativeSizeSpan(0.78f), s.length - 2, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+      setSpan(ForegroundColorSpan(0xFF5B5B63.toInt()), s.length - 2, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+  }
+
+  /** The day after `c`'s, as a key. */
+  fun tomorrow(c: Calendar = Calendar.getInstance()): String = key((c.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) })
 
   /** "45 min" / "1h 30m" / "2 hr" */
   fun dur(d: Int): String = when {

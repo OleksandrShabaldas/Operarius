@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The part of the task happening now that is already behind the now line: dimmed like the app's. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#520B0B0D" />
+  <corners
+    android:bottomLeftRadius="0dp"
+    android:bottomRightRadius="0dp"
+    android:topLeftRadius="14dp"
+    android:topRightRadius="14dp" />
+</shape>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The start or end of the day (Settings → General). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="38dp"
+  android:orientation="horizontal">
+
+  <FrameLayout
+    android:layout_width="42dp"
+    android:layout_height="match_parent" />
+
+  <FrameLayout
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="4dp"
+    android:background="@drawable/operarius_widget_tl_block_red"
+    android:clipToOutline="true">
+
+    <!-- The hours outside the day are red, as in the app. -->
+    <ImageView
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:scaleType="fitXY"
+      android:src="@drawable/operarius_widget_hatch_red" />
+
+    <TextView
+      android:id="@+id/e_text"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="center"
+      android:fontFeatureSettings="tnum"
+      android:includeFontPadding="false"
+      android:letterSpacing="0.06"
+      android:singleLine="true"
+      android:textColor="#FF6B70"
+      android:textSize="10.5sp"
+      android:textStyle="bold" />
+  </FrameLayout>
+</LinearLayout>

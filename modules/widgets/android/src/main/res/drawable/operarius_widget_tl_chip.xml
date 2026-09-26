@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A short gap between tasks ("15 min"). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#F21E1F23" />
+  <stroke android:width="1dp" android:color="#17FFFFFF" />
+  <corners android:radius="7dp" />
+</shape>

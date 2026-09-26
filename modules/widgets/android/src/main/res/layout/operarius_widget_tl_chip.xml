@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A short gap ("15 min"): tap to fill it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="26dp"
+  android:orientation="horizontal">
+
+  <FrameLayout
+    android:layout_width="42dp"
+    android:layout_height="match_parent" />
+
+  <LinearLayout
+    android:layout_width="30dp"
+    android:layout_height="match_parent"
+    android:gravity="center_horizontal"
+    android:orientation="vertical">
+
+      <ImageView
+        android:id="@+id/g_top"
+        android:layout_width="6dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scaleType="fitXY"
+        android:src="@drawable/operarius_widget_rail" />
+
+      <ImageView
+        android:id="@+id/g_bot"
+        android:layout_width="6dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scaleType="fitXY"
+        android:src="@drawable/operarius_widget_rail" />
+  </LinearLayout>
+
+  <FrameLayout
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1">
+
+    <TextView
+      android:id="@+id/c_text"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="center"
+      android:background="@drawable/operarius_widget_tl_chip"
+      android:fontFeatureSettings="tnum"
+      android:includeFontPadding="false"
+      android:paddingLeft="9dp"
+      android:paddingTop="3dp"
+      android:paddingRight="9dp"
+      android:paddingBottom="3dp"
+      android:singleLine="true"
+      android:text=""
+      android:textColor="#8A8A92"
+      android:textSize="10.5sp"
+      android:textStyle="bold" />
+  </FrameLayout>
+</LinearLayout>

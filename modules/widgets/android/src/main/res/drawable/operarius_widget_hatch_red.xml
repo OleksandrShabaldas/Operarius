@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Red diagonal hatching (outside the day, overlaps), repeated to any size. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+  android:src="@drawable/operarius_widget_hatch_red_tile"
+  android:tileMode="repeat" />

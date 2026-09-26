@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The task happening now. -->
+<!-- A free stretch (its hatching is clipped to these corners). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-  <solid android:color="#14FF5A5F" />
-  <stroke android:width="1dp" android:color="#47FF5A5F" />
+  <solid android:color="#07FFFFFF" />
   <corners android:radius="12dp" />
 </shape>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tomorrow's first task, after the day. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:orientation="horizontal"
+  android:paddingTop="8dp"
+  android:paddingBottom="6dp">
+
+  <TextView
+    android:id="@+id/x_gut"
+    android:layout_width="42dp"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center_vertical"
+    android:fontFeatureSettings="tnum"
+    android:gravity="end"
+    android:includeFontPadding="false"
+    android:lineSpacingExtra="1dp"
+    android:maxLines="2"
+    android:paddingRight="7dp"
+    android:textColor="#5B5B63"
+    android:textSize="11.5sp"
+    android:textStyle="bold" />
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:background="@drawable/operarius_widget_tl_next"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="6dp">
+
+    <FrameLayout
+      android:layout_width="28dp"
+      android:layout_height="28dp">
+
+      <ImageView
+        android:id="@+id/x_tile"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@drawable/operarius_widget_tl_mini" />
+
+      <TextView
+        android:id="@+id/x_emoji"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:includeFontPadding="false"
+        android:textSize="14sp" />
+    </FrameLayout>
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_marginLeft="9dp"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/x_when"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFeatureSettings="tnum"
+        android:includeFontPadding="false"
+        android:letterSpacing="0.06"
+        android:singleLine="true"
+        android:textColor="#8A8A92"
+        android:textSize="9.5sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/x_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        android:singleLine="true"
+        android:textColor="#E4E4E8"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+      android:id="@+id/x_more"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginLeft="6dp"
+      android:layout_marginRight="4dp"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:textColor="#6E6E76"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+  </LinearLayout>
+</LinearLayout>

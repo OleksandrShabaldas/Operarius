@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The dotted connector between the tasks' bands (tinted in code), repeated downwards. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+  android:src="@drawable/operarius_widget_rail_dot"
+  android:tileModeX="clamp"
+  android:tileModeY="repeat" />

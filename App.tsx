@@ -122,7 +122,8 @@ function Root() {
 
   // Links into the app — from a reminder, "Open task" on its screen, or a
   // widget: operarius://task?key=<task>&date=<day> opens a task,
-  // operarius://day?date=<day> a day, operarius://new?date=<day> a new task.
+  // operarius://day?date=<day> a day, operarius://new?date=<day> a new task
+  // (&start=<minute>&dur=<minutes>: in a widget's free time, at that time).
   const linkRef = useRef({ tasks, openNew: (_?: { startMin?: number; dur?: number; type?: TaskType }) => {} });
   linkRef.current.tasks = tasks;
   const openFromLink = useCallback((url: string | null) => {
@@ -140,7 +141,12 @@ function Root() {
       setTab('today');
       setSelectedKey(date);
       // A new task: once the day is there, open the editor on it.
-      if (url.startsWith('operarius://new')) setTimeout(() => linkRef.current.openNew(), ms(360) + 60);
+      if (url.startsWith('operarius://new')) {
+        const start = Number(params.start);
+        const dur = Number(params.dur);
+        const at = params.start && Number.isFinite(start) ? { startMin: start, dur: Number.isFinite(dur) && dur > 0 ? dur : 30, type: 'planned' as TaskType } : undefined;
+        setTimeout(() => linkRef.current.openNew(at), ms(360) + 60);
+      }
       return;
     }
     if (!url.startsWith('operarius://task')) return;

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The day's start and end, and overlaps: red, hatched. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-  <solid android:color="#26FF5A5F" />
-  <corners android:radius="6dp" />
+  <solid android:color="#0CFF5A64" />
+  <corners android:radius="12dp" />
 </shape>

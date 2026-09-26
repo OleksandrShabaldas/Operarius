@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A task on the timeline (with its tag and place): 72 dp, so the now line can cross it where the moment is. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:paddingTop="3dp"
+  android:paddingBottom="3dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="72dp"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/r_start"
+      android:layout_width="42dp"
+      android:layout_height="match_parent"
+      android:fontFeatureSettings="tnum"
+      android:gravity="top|end"
+      android:includeFontPadding="false"
+      android:lineSpacingExtra="1dp"
+      android:maxLines="2"
+      android:paddingTop="5dp"
+      android:paddingRight="7dp"
+      android:text=""
+      android:textColor="#8A8A92"
+      android:textSize="11.5sp"
+      android:textStyle="bold" />
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_weight="1"
+      android:background="@drawable/operarius_widget_tl_card"
+      android:gravity="center_vertical"
+      android:orientation="horizontal">
+
+      <FrameLayout
+        android:layout_width="30dp"
+        android:layout_height="match_parent">
+
+        <ImageView
+          android:id="@+id/r_band"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:scaleType="fitXY"
+          android:src="@drawable/operarius_widget_tl_band" />
+
+        <!-- Android 12+: the band's part behind the now line, grey (its height set in code). -->
+        <ImageView
+          android:id="@+id/r_bandpast"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:scaleType="fitXY"
+          android:src="@drawable/operarius_widget_tl_band_past"
+          android:visibility="gone" />
+
+        <ImageView
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:scaleType="fitXY"
+          android:src="@drawable/operarius_widget_tl_band_shade" />
+
+        <TextView
+          android:id="@+id/r_emoji"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center"
+          android:includeFontPadding="false"
+          android:text=""
+          android:textSize="15sp" />
+      </FrameLayout>
+
+      <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingLeft="10dp">
+
+        <TextView
+          android:id="@+id/r_title"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:ellipsize="end"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:text=""
+          android:textColor="#F4F4F6"
+          android:textSize="14sp"
+          android:textStyle="bold" />
+
+        <TextView
+          android:id="@+id/r_time"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:ellipsize="end"
+          android:fontFeatureSettings="tnum"
+          android:includeFontPadding="false"
+          android:singleLine="true"
+          android:text=""
+          android:textColor="#8A8A92"
+          android:textSize="11.5sp" />
+
+        <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="5dp"
+          android:gravity="center_vertical"
+          android:orientation="horizontal">
+
+          <TextView
+          android:id="@+id/r_tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginRight="5dp"
+            android:background="@drawable/operarius_widget_tl_tag"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxWidth="110dp"
+            android:paddingLeft="6dp"
+            android:paddingTop="2.5dp"
+            android:paddingRight="6dp"
+            android:paddingBottom="2.5dp"
+            android:singleLine="true"
+            android:text=""
+            android:textColor="#8A8A92"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+          <TextView
+          android:id="@+id/r_place"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginRight="5dp"
+            android:background="@drawable/operarius_widget_tl_place"
+            android:drawableStart="@drawable/operarius_widget_ic_pin"
+            android:drawablePadding="3dp"
+            android:drawableTint="#8A8A92"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxWidth="110dp"
+            android:paddingLeft="5dp"
+            android:paddingTop="2.5dp"
+            android:paddingRight="6dp"
+            android:paddingBottom="2.5dp"
+            android:singleLine="true"
+            android:text=""
+            android:textColor="#8A8A92"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+          <TextView
+          android:id="@+id/r_subs"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFeatureSettings="tnum"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:text=""
+            android:textColor="#6E6E76"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+        </LinearLayout>
+      </LinearLayout>
+
+      <FrameLayout
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginLeft="6dp"
+        android:layout_marginRight="11dp">
+
+        <ImageView
+          android:id="@+id/r_check"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:src="@drawable/operarius_widget_ic_ring"
+          android:tint="#5B5B63" />
+
+        <ImageView
+          android:id="@+id/r_tick"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:src="@drawable/operarius_widget_ic_tick"
+          android:visibility="gone" />
+      </FrameLayout>
+    </LinearLayout>
+  </LinearLayout>
+
+  <!-- Android 12+: the part already behind the now line, dimmed (its height set in code)… -->
+  <ImageView
+    android:id="@+id/r_elapsed"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginLeft="42dp"
+    android:background="@drawable/operarius_widget_tl_elapsed"
+    android:visibility="gone" />
+
+  <!-- …and the now line crossing the card where the moment is (its offset set in code). -->
+  <FrameLayout
+  android:id="@+id/r_nowline"
+  android:layout_width="match_parent"
+  android:layout_height="18dp"
+  android:visibility="gone">
+
+  <ImageView
+    android:layout_width="match_parent"
+    android:layout_height="1.5dp"
+    android:layout_gravity="center_vertical"
+    android:layout_marginRight="2dp"
+    android:background="#CCFF5A5F" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <!-- (the time sits at the line's start, over it, as in the app) -->
+    <FrameLayout
+      android:layout_width="42dp"
+      android:layout_height="match_parent">
+
+      <TextClock
+        android:id="@+id/r_clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:background="@drawable/operarius_widget_tl_clock"
+        android:includeFontPadding="false"
+        android:paddingLeft="3dp"
+        android:paddingTop="1.5dp"
+        android:paddingRight="3dp"
+        android:paddingBottom="1.5dp"
+        android:textColor="#FF5A5F"
+        android:textSize="10.5sp"
+        android:textStyle="bold"
+        android:fontFeatureSettings="tnum"
+        android:format12Hour="h:mm"
+        android:format24Hour="HH:mm"
+        android:singleLine="true" />
+    </FrameLayout>
+
+    <ImageView
+      android:layout_width="9dp"
+      android:layout_height="9dp"
+      android:layout_marginLeft="10.5dp"
+      android:src="@drawable/operarius_widget_tl_dot" />
+  </LinearLayout>
+</FrameLayout>
+</FrameLayout>

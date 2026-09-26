@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nothing more today: a word about how the day went. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:gravity="center"
+  android:orientation="vertical"
+  android:paddingTop="14dp"
+  android:paddingBottom="12dp">
+
+  <!-- All done: a teal check (the disc tinted, its tick not). -->
+  <FrameLayout
+    android:id="@+id/n_icon"
+    android:layout_width="22dp"
+    android:layout_height="22dp"
+    android:layout_marginBottom="7dp"
+    android:visibility="gone">
+
+    <ImageView
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:src="@drawable/operarius_widget_ic_disc"
+      android:tint="#4FD1C5" />
+
+    <ImageView
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:src="@drawable/operarius_widget_ic_tick" />
+  </FrameLayout>
+
+  <TextView
+    android:id="@+id/n_title"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:includeFontPadding="false"
+    android:singleLine="true"
+    android:textColor="#C8C8CE"
+    android:textSize="14sp"
+    android:textStyle="bold" />
+
+  <TextView
+    android:id="@+id/n_sub"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:includeFontPadding="false"
+    android:singleLine="true"
+    android:textColor="#8A8A92"
+    android:textSize="12sp" />
+</LinearLayout>

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Free time: tap to fill it with a task. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/r_root"
+  android:layout_width="match_parent"
+  android:layout_height="56dp"
+  android:orientation="horizontal">
+
+  <FrameLayout
+    android:layout_width="42dp"
+    android:layout_height="match_parent" />
+
+  <LinearLayout
+    android:layout_width="30dp"
+    android:layout_height="match_parent"
+    android:gravity="center_horizontal"
+    android:orientation="vertical">
+
+      <ImageView
+        android:id="@+id/g_top"
+        android:layout_width="6dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scaleType="fitXY"
+        android:src="@drawable/operarius_widget_rail" />
+
+      <ImageView
+        android:id="@+id/g_bot"
+        android:layout_width="6dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scaleType="fitXY"
+        android:src="@drawable/operarius_widget_rail" />
+  </LinearLayout>
+
+  <FrameLayout
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="4dp"
+    android:background="@drawable/operarius_widget_tl_block"
+    android:clipToOutline="true">
+
+    <ImageView
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:scaleType="fitXY"
+      android:src="@drawable/operarius_widget_hatch" />
+
+    <LinearLayout
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="center"
+      android:gravity="center_horizontal"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/f_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFeatureSettings="tnum"
+        android:includeFontPadding="false"
+        android:singleLine="true"
+        android:text=""
+        android:textColor="#5B5B63"
+        android:textSize="11.5sp" />
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:includeFontPadding="false"
+        android:singleLine="true"
+        android:text="@string/operarius_widget_create"
+        android:textColor="#8A8A92"
+        android:textSize="11.5sp"
+        android:textStyle="bold" />
+    </LinearLayout>
+  </FrameLayout>
+</LinearLayout>

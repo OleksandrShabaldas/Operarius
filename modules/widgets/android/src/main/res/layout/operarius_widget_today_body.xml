@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Today's body: progress, the all-day tasks, then the timeline from the now line on. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/t_body"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:orientation="vertical">
+
+  <ProgressBar
+    android:id="@+id/t_bar"
+    style="?android:attr/progressBarStyleHorizontal"
+    android:layout_width="match_parent"
+    android:layout_height="3dp"
+    android:layout_marginLeft="4dp"
+    android:layout_marginTop="9dp"
+    android:layout_marginRight="4dp"
+    android:max="100"
+    android:progressDrawable="@drawable/operarius_widget_progress" />
+
+  <LinearLayout
+    android:id="@+id/t_allday"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:background="@drawable/operarius_widget_allday"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingLeft="10dp"
+    android:paddingTop="6dp"
+    android:paddingRight="10dp"
+    android:paddingBottom="6dp"
+    android:visibility="gone">
+
+    <ImageView
+      android:layout_width="14dp"
+      android:layout_height="14dp"
+      android:layout_marginRight="7dp"
+      android:src="@drawable/operarius_widget_ic_sun" />
+
+    <TextView
+      android:id="@+id/t_allday_txt"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:ellipsize="end"
+      android:includeFontPadding="false"
+      android:singleLine="true"
+      android:textColor="#C8C8CE"
+      android:textSize="12.5sp" />
+  </LinearLayout>
+
+  <FrameLayout
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="6dp"
+    android:layout_weight="1">
+
+    <ListView
+      android:id="@+id/t_list"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:divider="@null"
+      android:dividerHeight="0dp"
+      android:layoutAnimation="@anim/operarius_widget_rows"
+      android:listSelector="@android:color/transparent"
+      android:scrollbars="none" />
+
+    <!-- While the rows load: the now line, where the list will begin. -->
+    <LinearLayout
+      android:id="@+id/t_empty"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="vertical">
+
+      <FrameLayout
+  android:id="@+id/t_e_now"
+  android:layout_width="match_parent"
+  android:layout_height="22dp">
+
+  <ImageView
+    android:layout_width="match_parent"
+    android:layout_height="1.5dp"
+    android:layout_gravity="center_vertical"
+    android:layout_marginRight="2dp"
+    android:background="#CCFF5A5F" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <!-- (the time sits at the line's start, over it, as in the app) -->
+    <FrameLayout
+      android:layout_width="42dp"
+      android:layout_height="match_parent">
+
+      <TextClock
+        android:id="@+id/t_e_clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:background="@drawable/operarius_widget_tl_clock"
+        android:includeFontPadding="false"
+        android:paddingLeft="3dp"
+        android:paddingTop="1.5dp"
+        android:paddingRight="3dp"
+        android:paddingBottom="1.5dp"
+        android:textColor="#FF5A5F"
+        android:textSize="10.5sp"
+        android:textStyle="bold"
+        android:fontFeatureSettings="tnum"
+        android:format12Hour="h:mm"
+        android:format24Hour="HH:mm"
+        android:singleLine="true" />
+    </FrameLayout>
+
+    <ImageView
+      android:layout_width="9dp"
+      android:layout_height="9dp"
+      android:layout_marginLeft="10.5dp"
+      android:src="@drawable/operarius_widget_tl_dot" />
+  </LinearLayout>
+</FrameLayout>
+    </LinearLayout>
+  </FrameLayout>
+</LinearLayout>

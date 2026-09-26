@@ -17,6 +17,7 @@ export function occursOn(task: Task, dateKey: string): boolean {
   if (dateKey < base) return false;
   if (task.repeat && task.repeat.endDate && dateKey > task.repeat.endDate) return false;
   if (!task.repeat) return dateKey === base;
+  if (task.skip?.includes(dateKey)) return false; // taken out of the series
 
   const r = task.repeat;
   const B = dateFromKey(base);

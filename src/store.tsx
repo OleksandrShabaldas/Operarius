@@ -1,14 +1,17 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { CalendarSync, Draft, PlaceLocation, ReminderIntensity, Settings, Task } from './types';
+import { CalendarSync, Draft, PlaceLocation, ReminderIntensity, RepeatScope, Settings, Task } from './types';
 import { DEFAULT_CALENDAR, DEFAULT_SETTINGS, localRepository, Repository, seedTasks } from './storage';
 import { COLORS } from './theme';
 import { expandForDay, parseId } from './recurrence';
 import { genId, todayKey } from './utils';
 import { applyOps, SyncOps } from './calendarSync';
 import { Backup, restorePhotos } from './backup';
+import { endBefore, isSeries, moveDays, withoutDay } from './repeatScope';
 
 export type Snapshot = { tasks: Task[]; settings: Settings };
-export type Deleted = { task: Task; index: number };
+// What a delete removed, to undo it: the task (at its place in the list) — or,
+// when only some days of a series went, the series as it was (`series`).
+export type Deleted = { task: Task; index: number; series?: boolean };
 export type ImportResult = { tasks: number; tags: number; places: number };
 
 type Ctx = {
@@ -16,15 +19,16 @@ type Ctx = {
   tasks: Task[];
   settings: Settings;
   tasksForDay: (dateKey: string) => Task[];
-  saveDraft: (draft: Draft) => void; // add when no id, else update
-  deleteTask: (id: string) => Deleted | null; // what was removed (to undo it)
+  saveDraft: (draft: Draft) => void; // add when no id, else update (a draft with a scope: part of a series)
+  deleteTask: (id: string, scope?: RepeatScope) => Deleted | null; // what was removed (to undo it); a series' day: that day / it and after / all
   restoreTask: (d: Deleted) => void; // undo a delete
   toggleDone: (id: string) => void;
   setDone: (id: string, done: boolean) => void; // e.g. "Done" pressed on a reminder
   toggleSubtask: (taskId: string, subId: string) => void;
   toggleExpanded: (id: string) => void; // show/hide subtasks inline on the card
   toggleStar: (id: string) => void; // high priority on / off
-  moveTask: (id: string, start: number) => void; // commit a drag
+  toggleAlt: (id: string) => void; // show the task's alternative name / its name
+  moveTask: (id: string, start: number, scope?: RepeatScope) => void; // commit a drag (a series' day: that day / it and after / all)
   updateSettings: (patch: Partial<Settings>) => void;
   updateCalendar: (patch: Partial<CalendarSync>) => void; // Settings → Google Calendar
   applyCalendarSync: (ops: SyncOps, patch: Partial<CalendarSync>) => void; // a sync's changes to the tasks + its state
@@ -37,9 +41,9 @@ type Ctx = {
   // Tags & places
   addTag: (name: string, parentId?: string | null) => void;
   renameTag: (id: string, name: string) => void;
-  setTagColor: (id: string, color: string) => void;
+  setTagColor: (id: string, color: string | null) => void; // a sub-tag's null = its parent's colour again
   setTagHideDots: (id: string, hide: boolean) => void; // keep the tag's tasks out of the week-strip dots
-  setTagIcon: (id: string, icon: string | null) => void; // sub-tag icon (null = none)
+  setTagIcon: (id: string, icon: string | null) => void; // a tag's icon (null = none)
   setTagIntensity: (id: string, intensity: ReminderIntensity | null) => void; // how its tasks' reminders start (null = the default / its parent's)
   deleteTag: (id: string) => void;
   addPlace: (name: string, tagId?: string | null) => void;
@@ -121,33 +125,67 @@ export function AppProvider({
     // A single task with subtasks is complete exactly when all of them are
     // (repeating tasks track that per day, not in the series' template).
     const fix = (t: Task): Task => (!t.repeat && t.subtasks.length ? { ...t, done: t.subtasks.every((x) => x.done) } : t);
+    // An alternative name emptied out takes its "shown" switch with it.
+    const tidy = (t: Task): Task => {
+      const alt = t.alt?.trim();
+      if (alt) return alt === t.alt ? t : { ...t, alt };
+      if (!('alt' in t) && !('showAlt' in t)) return t;
+      const { alt: _a, showAlt: _s, ...rest } = t;
+      return rest as Task;
+    };
     const ticks = (t: Pick<Task, 'subtasks'>) => t.subtasks.map((x) => `${x.id}:${x.done ? 1 : 0}`).join(',');
+    const { scope, ...fields } = draft;
+    if (scope) {
+      // Part of a series: the draft becomes a task (one day) or a series (that
+      // day on) of its own, and the old series gives those days up.
+      setTasks((prev) => {
+        const base = prev.find((t) => t.id === scope.baseId);
+        const task: Task = fix(tidy({ ...(fields as Omit<Task, 'id'>), title, id: genId() }));
+        if (!base) return [...prev, task];
+        const rest = scope.kind === 'one' ? withoutDay(base, scope.date) : endBefore(base, scope.date);
+        return [...prev.flatMap((t) => (t.id !== base.id ? [t] : rest ? [rest] : [])), task];
+      });
+      return;
+    }
     setTasks((prev) => {
       if (draft.id) {
         // Only re-derive when the subtasks changed — renaming an older task
         // must not quietly reopen it.
         return prev.map((t) => {
           if (t.id !== draft.id) return t;
-          const next = { ...t, ...draft, title } as Task;
+          const next = tidy({ ...t, ...draft, title } as Task);
           return ticks(next) !== ticks(t) ? fix(next) : next;
         });
       }
-      const task: Task = fix({ ...(draft as Omit<Task, 'id'>), title, id: genId() });
+      const task: Task = fix(tidy({ ...(draft as Omit<Task, 'id'>), title, id: genId() }));
       return [...prev, task];
     });
   }, []);
 
-  const deleteTask = useCallback((id: string): Deleted | null => {
-    const { baseId } = parseId(id);
+  const deleteTask = useCallback((id: string, scope: RepeatScope = 'all'): Deleted | null => {
+    const { baseId, date } = parseId(id);
     const index = tasksRef.current.findIndex((t) => t.id === baseId);
     if (index < 0) return null;
     const task = tasksRef.current[index];
+    // Some days of a series: it stays, without them.
+    if (scope !== 'all' && date && isSeries(task)) {
+      const rest = scope === 'one' ? withoutDay(task, date) : endBefore(task, date);
+      if (rest) {
+        setTasks((prev) => prev.map((t) => (t.id === baseId ? rest : t)));
+        return { task, index, series: true };
+      }
+    }
     setTasks((prev) => prev.filter((t) => t.id !== baseId));
     return { task, index };
   }, []);
 
-  // Put a deleted task back where it was (same id, links and history).
-  const restoreTask = useCallback(({ task, index }: Deleted) => {
+  // Put a deleted task back where it was (same id, links and history) — or a
+  // series back as it was, with the days it gave up.
+  const restoreTask = useCallback(({ task, index, series }: Deleted) => {
+    if (series) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+      return;
+    }
     setTasks((prev) => (prev.some((t) => t.id === task.id) ? prev : [...prev.slice(0, index), task, ...prev.slice(index)]));
   }, []);
 
@@ -228,9 +266,20 @@ export function AppProvider({
     setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, starred: !t.starred || undefined } : t)));
   }, []);
 
-  const moveTask = useCallback((id: string, start: number) => {
+  const moveTask = useCallback((id: string, start: number, scope: RepeatScope = 'all') => {
+    const { baseId, date } = parseId(id);
+    setTasks((prev) =>
+      prev.flatMap((t) => {
+        if (t.id !== baseId) return [t];
+        if (scope !== 'all' && date && isSeries(t)) return moveDays(t, date, scope, start, genId);
+        return [{ ...t, start }];
+      })
+    );
+  }, []);
+
+  const toggleAlt = useCallback((id: string) => {
     const { baseId } = parseId(id);
-    setTasks((prev) => prev.map((t) => (t.id === baseId ? { ...t, start } : t)));
+    setTasks((prev) => prev.map((t) => (t.id === baseId && t.alt?.trim() ? { ...t, showAlt: !t.showAlt || undefined } : t)));
   }, []);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -253,7 +302,7 @@ export function AppProvider({
     if (mode === 'replace') {
       const restored = restorePhotos(b);
       setTasks(b.tasks);
-      setSettings((prev) => ({ ...restored, alarmSound: prev.alarmSound, calendar: { ...prev.calendar, seen: [] }, lastBackup: prev.lastBackup }));
+      setSettings((prev) => ({ ...restored, alarmSound: prev.alarmSound, calendar: { ...prev.calendar, seen: [], extra: prev.calendar.extra.map((e) => ({ ...e, seen: [] })) }, lastBackup: prev.lastBackup }));
       return { tasks: b.tasks.length, tags: restored.tags.length, places: restored.places.length };
     }
     // Merge: add the tasks, tags and places that aren't here yet.
@@ -318,8 +367,19 @@ export function AppProvider({
     setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, name: n } : t)) }));
   }, []);
 
-  const setTagColor = useCallback((id: string, color: string) => {
-    setSettings((prev) => ({ ...prev, tags: prev.tags.map((t) => (t.id === id ? { ...t, color } : t)) }));
+  // A tag's colour. A top-level tag's sub-tags follow it (unless they have a
+  // colour of their own); a sub-tag's own colour — or, null, its parent's again.
+  const setTagColor = useCallback((id: string, color: string | null) => {
+    setSettings((prev) => {
+      const tag = prev.tags.find((t) => t.id === id);
+      if (!tag) return prev;
+      if (tag.parentId) {
+        const parent = prev.tags.find((t) => t.id === tag.parentId);
+        return { ...prev, tags: prev.tags.map((t) => (t.id !== id ? t : color ? { ...t, color, ownColor: true } : { ...t, color: parent?.color ?? t.color, ownColor: undefined })) };
+      }
+      if (!color) return prev;
+      return { ...prev, tags: prev.tags.map((t) => (t.id === id || (t.parentId === id && !t.ownColor) ? { ...t, color } : t)) };
+    });
   }, []);
 
   const setTagHideDots = useCallback((id: string, hide: boolean) => {
@@ -390,6 +450,7 @@ export function AppProvider({
     toggleSubtask,
     toggleExpanded,
     toggleStar,
+    toggleAlt,
     moveTask,
     updateSettings,
     updateCalendar,

@@ -69,6 +69,16 @@ export function addDays(key: string, n: number): string {
   return dateKey(d);
 }
 
+// Calendar days from the moment `at` to `now` — by date, not 24-hour spans:
+// last night is 1 ("yesterday") even if it's only a few hours ago.
+export function daysAgo(at: number, now = Date.now()): number {
+  const day = (t: number) => {
+    const d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  return Math.round((day(now) - day(at)) / 86400000); // (rounded: a DST day is 23 or 25 hours)
+}
+
 // Return the 7 date keys of the week containing `key`, honoring weekStart.
 export function weekOf(key: string, weekStart: WeekStart): string[] {
   const d = dateFromKey(key);

@@ -7,7 +7,7 @@ import { C, COLORS, EMOJIS, ICON_SLOTS, PALETTE_SLOTS } from '../theme';
 import { sp } from '../motion';
 import { Tag } from '../types';
 import { useApp } from '../store';
-import { fmt, fmtDur, hexA } from '../utils';
+import { daysAgo, fmt, fmtDur, hexA } from '../utils';
 import { fmtCoords, hasLocation } from '../maps';
 import { fmtScale, MotionPreview, ScaleSlider, Toggle } from '../components/MotionSettings';
 import { TextPromptModal } from '../components/TextPromptModal';
@@ -105,7 +105,7 @@ export function SettingsScreen({
     const cal = settings.calendar;
     if (id === 'calendar' && cal.on && cal.calendarName) return `On · ${cal.calendarName}`;
     if (id === 'data' && settings.lastBackup) {
-      const days = Math.floor((Date.now() - settings.lastBackup.at) / 86400000);
+      const days = daysAgo(settings.lastBackup.at);
       return `Last backup ${days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}`;
     }
     return sub;

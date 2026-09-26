@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { C } from '../theme';
 import { motion, ms, sp } from '../motion';
 import { Snapshot, useApp } from '../store';
-import { dateKey, dateLabel, fmt, hexA } from '../utils';
+import { dateKey, dateLabel, daysAgo, fmt, hexA } from '../utils';
 import { Backup, BackupError, backupName, buildBackup, cleanupPhotos, countsOf, pickBackup, saveFile, share } from '../backup';
 import { appEvents, removeAppEvents } from '../calendarSync';
 import { Task } from '../types';
@@ -54,7 +54,7 @@ const clockOf = (at: number, clock: '12h' | '24h') => {
 
 // "3 days ago" (for the last backup)
 function age(at: number, now = Date.now()): string {
-  const days = Math.floor((now - at) / 86400000);
+  const days = daysAgo(at, now);
   if (days <= 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 30) return `${days} days ago`;
@@ -227,7 +227,7 @@ export function DataSettings() {
           <View style={{ flex: 1 }}>
             <Text style={styles.lastTitle}>{last ? `Last backup ${age(last.at)}` : 'No backup yet'}</Text>
             <Text style={styles.lastSub} numberOfLines={1}>
-              {last ? `${Date.now() - last.at < 2 * 86400000 ? clockOf(last.at, settings.clock) : when(last.at, settings.clock)} · ${last.name}` : 'Export one to keep your tasks safe'}
+              {last ? `${daysAgo(last.at) <= 1 ? clockOf(last.at, settings.clock) : when(last.at, settings.clock)} · ${last.name}` : 'Export one to keep your tasks safe'}
             </Text>
           </View>
         </View>

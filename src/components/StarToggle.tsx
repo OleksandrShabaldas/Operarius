@@ -14,7 +14,7 @@ export const STAR = '#F2C14E';
 // and sends out a soft ring.
 export function StarToggle({ on, onToggle, size = 20, style }: { on: boolean; onToggle: () => void; size?: number; style?: StyleProp<ViewStyle> }) {
   const pop = useSharedValue(1);
-  const ring = useSharedValue(0);
+  const ring = useSharedValue(1); // (1 = the ring's pulse is over: invisible until the next one)
   const first = useRef(true);
   useEffect(() => {
     if (first.current) {

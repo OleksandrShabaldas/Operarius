@@ -823,20 +823,24 @@ export function MonthCalendar({
           </Text>
         ))}
       </View>
-      <View style={styles.calGrid}>
-        {cells.map((d, i) => {
-          if (d == null) return <View key={i} style={styles.calCell} />;
-          const key = dateKey(new Date(view.y, view.m, d));
-          const on = key === value;
-          const isToday = key === tKey;
-          return (
-            <Tappable key={i} style={styles.calCell} onPress={() => onChange(key)}>
-              <View style={[styles.calDay, on && styles.calDayOn, !on && isToday && styles.calDayToday]}>
-                <Text style={[styles.calDayTxt, on && styles.calDayTxtOn, !on && isToday && styles.calDayTodayTxt]}>{d}</Text>
-              </View>
-            </Tappable>
-          );
-        })}
+      <View>
+        {Array.from({ length: cells.length / 7 }, (_, w) => (
+          <View key={w} style={styles.calRow}>
+            {cells.slice(w * 7, w * 7 + 7).map((d, c) => {
+              if (d == null) return <View key={c} style={styles.calCell} />;
+              const key = dateKey(new Date(view.y, view.m, d));
+              const on = key === value;
+              const isToday = key === tKey;
+              return (
+                <Tappable key={c} style={styles.calCell} onPress={() => onChange(key)}>
+                  <View style={[styles.calDay, on && styles.calDayOn, !on && isToday && styles.calDayToday]}>
+                    <Text style={[styles.calDayTxt, on && styles.calDayTxtOn, !on && isToday && styles.calDayTodayTxt]}>{d}</Text>
+                  </View>
+                </Tappable>
+              );
+            })}
+          </View>
+        ))}
       </View>
     </>
   );
@@ -974,8 +978,7 @@ const styles = StyleSheet.create({
   todayBtnTxt: { fontSize: 12.5, fontWeight: '700', color: C.accentB },
   calRow: { flexDirection: 'row' },
   calDow: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '600', color: C.muted, marginBottom: 4 },
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
+  calCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 2 },
   calDay: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   calDayOn: { backgroundColor: C.accentB, borderRadius: 12 },
   calDayToday: { borderWidth: 1.5, borderColor: C.accentB, borderRadius: 12 },

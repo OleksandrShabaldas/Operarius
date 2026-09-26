@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CalendarSync, CalLink, CalSeen, CustomReminder, Place, ReminderIntensity, Reminders, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
+import { CalendarSync, CalExtra, CalLink, CalSeen, CustomReminder, Place, ReminderIntensity, Reminders, Repeat, RepeatFreq, Settings, Tag, Task } from './types';
 import {
   DEFAULT_DAY_START,
   DEFAULT_DAY_END,
@@ -57,6 +57,7 @@ export const DEFAULT_CALENDAR: CalendarSync = {
   seen: [],
   ignored: [],
   counts: { toCalendar: 0, fromCalendar: 0 },
+  extra: [],
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -89,9 +90,30 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
+const seenList = (v: any): CalSeen[] => (Array.isArray(v) ? v.filter((x: any): x is CalSeen => x && typeof x.t === 'string' && typeof x.k === 'string' && typeof x.i === 'string') : []);
+
+/** Sub-tags without a colour of their own wear their parent's. */
+export function withParentColors(tags: Tag[]): Tag[] {
+  const color = new Map(tags.filter((t) => !t.parentId).map((t) => [t.id, t.color]));
+  return tags.map((t) => (t.parentId && !t.ownColor && color.has(t.parentId) && color.get(t.parentId) !== t.color ? { ...t, color: color.get(t.parentId)! } : t));
+}
+
 function migrateCalendar(raw: any): CalendarSync {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_CALENDAR };
   const n = (v: any) => (typeof v === 'number' && isFinite(v) ? v : 0);
+  const extra: CalExtra[] = Array.isArray(raw.extra)
+    ? raw.extra
+        .filter((e: any) => e && typeof e.id === 'string' && e.id !== raw.calendarId)
+        .map((e: any) => ({
+          id: e.id,
+          name: typeof e.name === 'string' ? e.name : '',
+          account: typeof e.account === 'string' ? e.account : '',
+          color: typeof e.color === 'string' ? e.color : DEFAULT_CALENDAR.color,
+          seen: seenList(e.seen),
+          ignored: strList(e.ignored),
+          counts: { toCalendar: n(e.counts?.toCalendar), fromCalendar: n(e.counts?.fromCalendar) },
+        }))
+    : [];
   return {
     on: raw.on === true,
     calendarId: typeof raw.calendarId === 'string' ? raw.calendarId : null,
@@ -101,9 +123,10 @@ function migrateCalendar(raw: any): CalendarSync {
     direction: raw.direction === 'toCalendar' || raw.direction === 'fromCalendar' ? raw.direction : 'both',
     lastSync: typeof raw.lastSync === 'number' ? raw.lastSync : null,
     lastError: typeof raw.lastError === 'string' ? raw.lastError : null,
-    seen: Array.isArray(raw.seen) ? raw.seen.filter((x: any): x is CalSeen => x && typeof x.t === 'string' && typeof x.k === 'string' && typeof x.i === 'string') : [],
+    seen: seenList(raw.seen),
     ignored: strList(raw.ignored),
     counts: { toCalendar: n(raw.counts?.toCalendar), fromCalendar: n(raw.counts?.fromCalendar) },
+    extra,
   };
 }
 
@@ -189,9 +212,11 @@ function migrateTask(raw: any): Task {
         ? raw.tag.toLowerCase()
         : null;
   const type = raw.type === 'allday' || raw.type === 'todo' ? raw.type : 'planned';
+  const alt = typeof raw.alt === 'string' && raw.alt.trim() ? raw.alt : undefined;
   return {
     id: String(raw.id),
     title: raw.title ?? 'Untitled',
+    ...(alt ? { alt, ...(raw.showAlt === true ? { showAlt: true } : {}) } : {}),
     emoji: raw.emoji ?? '📝',
     color: raw.color ?? '#5B9DF9',
     type,
@@ -204,6 +229,7 @@ function migrateTask(raw: any): Task {
     notes: typeof raw.notes === 'string' ? raw.notes : '',
     subtasks: Array.isArray(raw.subtasks) ? raw.subtasks : [],
     repeat: migrateRepeat(raw.repeat),
+    ...(Array.isArray(raw.skip) && raw.skip.some((d: any) => typeof d === 'string') ? { skip: raw.skip.filter((d: any) => typeof d === 'string') } : {}),
     doneDates: Array.isArray(raw.doneDates) ? raw.doneDates.filter((d: any) => typeof d === 'string') : [],
     subDone: migrateSubDone(raw.subDone),
     expanded: !!raw.expanded,
@@ -271,11 +297,14 @@ export function parseSettings(raw: unknown): Settings {
     ...DEFAULT_SETTINGS,
     ...parsed,
     // Never let a stored blob leave these empty/broken.
-    tags: (Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS).map((t: Tag) => ({
-      ...t,
-      color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
-      intensity: isIntensity(t.intensity) ? t.intensity : undefined,
-    })),
+    tags: withParentColors(
+      (Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : DEFAULT_TAGS).map((t: Tag) => ({
+        ...t,
+        color: t.color || DEFAULT_TAGS.find((d) => d.id === t.id)?.color || '#5B9DF9',
+        ownColor: t.parentId && t.ownColor === true ? true : undefined,
+        intensity: isIntensity(t.intensity) ? t.intensity : undefined,
+      }))
+    ),
     places: Array.isArray(parsed.places) ? parsed.places.map(migratePlace) : DEFAULT_PLACES,
     timePresets: migratePresets(parsed.timePresets, toPresets(DEFAULT_TIME_PRESETS)),
     durationPresets: migratePresets(parsed.durationPresets, toPresets(DEFAULT_DURATION_PRESETS)),

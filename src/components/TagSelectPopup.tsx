@@ -61,7 +61,7 @@ export function TagSelectPopup({
             const meta = [subs.length ? plural(subs.length, 'sub-tag') : null, total ? plural(total, 'task') : null].filter(Boolean).join('  ·  ');
             return (
               <Appear key={top.id} from="up" delay={60 + i * 45} distance={10} style={styles.group}>
-                <PickRow on={selectedId === top.id} tint={top.color} onPress={() => pick(top.id)} left={<Swatch color={top.color} />} title={top.name} sub={meta || null} />
+                <PickRow on={selectedId === top.id} tint={top.color} onPress={() => pick(top.id)} left={<Swatch color={top.color} icon={top.icon} />} title={top.name} sub={meta || null} />
                 {subs.map((sub, j) => {
                   const n = usage[sub.id] ?? 0;
                   return (
@@ -70,9 +70,9 @@ export function TagSelectPopup({
                       <PickRow
                         style={styles.subRow}
                         on={selectedId === sub.id}
-                        tint={top.color}
+                        tint={sub.color}
                         onPress={() => pick(sub.id)}
-                        left={<SubIcon tag={sub} color={top.color} />}
+                        left={<SubIcon tag={sub} color={sub.color} />}
                         title={sub.name}
                         sub={n ? plural(n, 'task') : null}
                       />
@@ -90,16 +90,16 @@ export function TagSelectPopup({
   );
 }
 
-// A top-level tag's colour, as a glossy tile.
-function Swatch({ color }: { color: string }) {
+// A top-level tag's colour, as a glossy tile (with its icon, when it has one).
+function Swatch({ color, icon }: { color: string; icon?: string }) {
   return (
     <LinearGradient colors={[color, hexA(color, 0.7)]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={[styles.swatch, { boxShadow: `0 5px 14px -5px ${hexA(color, 0.85)}` }]}>
-      <Feather name="tag" size={15} color="#0b0b0d" />
+      {icon ? <Text style={styles.swatchIcon}>{icon}</Text> : <Feather name="tag" size={15} color="#0b0b0d" />}
     </LinearGradient>
   );
 }
 
-// A sub-tag's own icon (emoji / letters), or a dot of the family colour.
+// A sub-tag's own icon (emoji / letters), or a dot of its colour (its own, or the family's).
 function SubIcon({ tag, color }: { tag: Tag; color: string }) {
   return <View style={[styles.subIcon, { backgroundColor: hexA(color, 0.16) }]}>{tag.icon ? <Text style={styles.subIconTxt}>{tag.icon}</Text> : <View style={[styles.subDot, { backgroundColor: color }]} />}</View>;
 }
@@ -120,6 +120,7 @@ const TILE_X = 10 + 17; // centre of the parent tile inside the group (row paddi
 const styles = StyleSheet.create({
   group: { marginTop: 8, borderRadius: 18, padding: 3, backgroundColor: 'rgba(255,255,255,0.03)' },
   swatch: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  swatchIcon: { fontSize: 16 },
   subWrap: { flexDirection: 'row', alignItems: 'stretch' },
   subRow: { flex: 1 },
   branch: { width: 38 },

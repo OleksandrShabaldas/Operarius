@@ -33,6 +33,8 @@ export type Reminders = {
 export type Task = {
   id: string;
   title: string;
+  alt?: string; // an alternative name (e.g. a short one) — tapping the name switches between the two
+  showAlt?: boolean; // the alternative name is the one shown
   emoji: string;
   color: string;
   type: TaskType;
@@ -45,6 +47,7 @@ export type Task = {
   notes: string;
   subtasks: Subtask[];
   repeat: Repeat | null; // recurrence rule (planned/allday)
+  skip?: string[]; // repeating tasks: days taken out of the series (deleted, or changed on their own)
   doneDates: string[]; // per-occurrence completion for repeating tasks
   subDone?: Record<string, string[]>; // repeating tasks: subtask ids ticked off per occurrence (YYYY-MM-DD)
   expanded: boolean; // subtasks shown inline on the card (persisted)
@@ -73,8 +76,22 @@ export type CalSeen = { t: string; k: string; i: string; m?: string; o?: number;
 
 export type CalDirection = 'both' | 'toCalendar' | 'fromCalendar';
 
-// Syncing with a calendar on the phone (a Google account's calendars are
-// synced to Google by the phone).
+// Another calendar synced alongside the main one: its events come in as tasks
+// and edits to them go back to it (new tasks go to the main calendar). Keeps
+// its own sync state, like the main one's below.
+export type CalExtra = {
+  id: string;
+  name: string;
+  account: string;
+  color: string;
+  seen: CalSeen[];
+  ignored: string[];
+  counts: { toCalendar: number; fromCalendar: number };
+};
+
+// Syncing with calendars on the phone (a Google account's calendars are
+// synced to Google by the phone). `calendarId` is the main one — new tasks
+// go there — and `extra` the others synced too.
 export type CalendarSync = {
   on: boolean;
   calendarId: string | null;
@@ -87,21 +104,29 @@ export type CalendarSync = {
   seen: CalSeen[]; // every linked task as of the last sync (to notice deletions here)
   ignored: string[]; // events (keys / ids) deleted here while syncing calendar → tasks only (never brought back)
   counts: { toCalendar: number; fromCalendar: number };
+  extra: CalExtra[];
 };
 
+// Which occurrences of a repeating task a change applies to.
+export type RepeatScope = 'one' | 'following' | 'all';
+
 // A task being composed/edited in the editor sheet. `id` is absent when new.
-export type Draft = Omit<Task, 'id'> & { id?: string };
+// `scope`: editing part of a repeating series — just one of its days (the
+// draft becomes a task of its own) or that day and the ones after it (the
+// draft becomes a new series; the old one ends the day before).
+export type Draft = Omit<Task, 'id'> & { id?: string; scope?: { kind: 'one' | 'following'; baseId: string; date: string } };
 
 export type WeekStart = 'mon' | 'sun';
 export type Clock = '12h' | '24h';
 
 // User-defined tag. Top-level when parentId is null, otherwise a sub-tag.
 // `hideDots` keeps the tag's tasks (and, for a top-level tag, its sub-tags'
-// tasks) out of the week strip's per-task dots. Sub-tags share their parent's
-// colour, so they can carry an `icon` (emoji / 2 letters) to tell them apart.
+// tasks) out of the week strip's per-task dots. Any tag can carry an `icon`
+// (emoji / 2 letters). A sub-tag has its parent's colour unless `ownColor`
+// (then it keeps the one picked for it when the parent's changes).
 // `intensity`: how reminders of the tag's tasks start (a sub-tag without one
 // follows its parent; no tag → Settings → Reminders' default).
-export type Tag = { id: string; name: string; parentId: string | null; color: string; hideDots?: boolean; icon?: string; intensity?: ReminderIntensity };
+export type Tag = { id: string; name: string; parentId: string | null; color: string; ownColor?: boolean; hideDots?: boolean; icon?: string; intensity?: ReminderIntensity };
 
 // User-defined place. May belong to a (top-level) tag, carry a location picked
 // on Google Maps, and hold a photo.

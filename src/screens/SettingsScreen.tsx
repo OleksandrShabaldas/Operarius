@@ -279,6 +279,9 @@ export function SettingsScreen({
               <Appear key={tag.id} from="up" delay={30 + ti * 40} style={styles.manageBlock}>
                 <View style={styles.manageRow}>
                   <Pressable onPress={() => { setTagColorPage('main'); setColorPick(tag.id); }} style={[styles.tagSwatch, { backgroundColor: tag.color }]} />
+                  <Pressable hitSlop={6} onPress={() => { setSubIconPage('grid'); setSubIconFor(tag.id); }} style={[styles.tagIcon, !tag.icon && styles.subIconEmpty, { boxShadow: `inset 0 0 0 1px ${tag.icon ? 'rgba(255,255,255,0.1)' : hexA(tag.color, 0.5)}` }]}>
+                    {tag.icon ? <Text style={styles.tagIconTxt}>{tag.icon}</Text> : <Feather name="plus" size={13} color={tag.color} />}
+                  </Pressable>
                   <Pressable style={styles.manageName} onPress={() => setPrompt({ title: 'Rename tag', initial: tag.name, submitLabel: 'Save', onSubmit: (t) => renameTag(tag.id, t) })}>
                     <Text style={[styles.manageNameTxt, tag.hideDots && styles.nameHidden]} numberOfLines={1}>{tag.name}</Text>
                   </Pressable>
@@ -297,9 +300,10 @@ export function SettingsScreen({
                       const hidden = inherited || !!st.hideDots;
                       return (
                         <View key={st.id} style={styles.subChip}>
-                          {/* Sub-tags share the parent's colour; an icon tells them apart. */}
-                          <Pressable hitSlop={6} onPress={() => { setSubIconPage('grid'); setSubIconFor(st.id); }} style={[styles.subIcon, !st.icon && styles.subIconEmpty, { boxShadow: `inset 0 0 0 1px ${st.icon ? 'rgba(255,255,255,0.1)' : hexA(tag.color, 0.5)}` }]}>
-                            {st.icon ? <Text style={styles.subIconTxt}>{st.icon}</Text> : <Feather name="plus" size={11} color={tag.color} />}
+                          {/* Its colour (its parent's until it gets one of its own) and its icon. */}
+                          <Pressable hitSlop={6} onPress={() => { setTagColorPage('main'); setColorPick(st.id); }} style={[styles.subColor, { backgroundColor: st.color }, st.ownColor && { boxShadow: `0 0 0 2px ${hexA(st.color, 0.35)}` }]} />
+                          <Pressable hitSlop={6} onPress={() => { setSubIconPage('grid'); setSubIconFor(st.id); }} style={[styles.subIcon, !st.icon && styles.subIconEmpty, { boxShadow: `inset 0 0 0 1px ${st.icon ? 'rgba(255,255,255,0.1)' : hexA(st.color, 0.5)}` }]}>
+                            {st.icon ? <Text style={styles.subIconTxt}>{st.icon}</Text> : <Feather name="plus" size={11} color={st.color} />}
                           </Pressable>
                           <Pressable onPress={() => setPrompt({ title: 'Rename sub-tag', initial: st.name, submitLabel: 'Save', onSubmit: (t) => renameTag(st.id, t) })}>
                             <Text style={[styles.subChipTxt, hidden && styles.nameHidden]}>{st.name}</Text>
@@ -543,7 +547,7 @@ export function SettingsScreen({
         </View>
       </CenterPopup>
 
-      {/* Sub-tag icon: the icon set (+ custom), or none */}
+      {/* A tag's icon: the icon set (+ custom), or none */}
       <CenterPopup open={subIconFor != null} onClose={() => setSubIconFor(null)}>
         {(() => {
           const st = settings.tags.find((t) => t.id === subIconFor);
@@ -552,12 +556,12 @@ export function SettingsScreen({
           return subIconPage === 'grid' ? (
             <Appear key="grid" from="left" distance={14}>
               <View style={styles.subIconHead}>
-                <View style={[styles.subIconBig, { boxShadow: `inset 0 0 0 1.5px ${hexA(parent?.color ?? C.accentB, 0.6)}` }]}>
-                  {st.icon ? <Text style={styles.subIconBigTxt}>{st.icon}</Text> : <Feather name="tag" size={18} color={parent?.color ?? C.accentB} />}
+                <View style={[styles.subIconBig, { boxShadow: `inset 0 0 0 1.5px ${hexA(st.color, 0.6)}` }]}>
+                  {st.icon ? <Text style={styles.subIconBigTxt}>{st.icon}</Text> : <Feather name="tag" size={18} color={st.color} />}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.colorTitle, { marginBottom: 2 }]}>{st.name}</Text>
-                  <Text style={styles.subIconSub}>Sub-tag of {parent?.name ?? '—'}</Text>
+                  <Text style={styles.subIconSub}>{parent ? `Sub-tag of ${parent.name}` : 'Tag'}</Text>
                 </View>
               </View>
               <IconGrid
@@ -614,7 +618,7 @@ export function SettingsScreen({
       <CenterPopup open={colorPick != null} onClose={() => setColorPick(null)}>
         {tagColorPage === 'main' ? (
           <Appear key="main" from="left" distance={14}>
-            <Text style={styles.colorTitle}>Tag color</Text>
+            <Text style={styles.colorTitle}>{pickedTag?.parentId ? 'Sub-tag color' : 'Tag color'}</Text>
             <PaletteRow
               colors={settings.colors}
               value={pickedTag?.color ?? COLORS[0]}
@@ -624,9 +628,24 @@ export function SettingsScreen({
               }}
               onCustom={() => setTagColorPage('custom')}
             />
-            <Pressable style={styles.popDone} onPress={() => setColorPick(null)}>
-              <Text style={styles.popCancelTxt}>Done</Text>
-            </Pressable>
+            {!!pickedTag?.parentId && (
+              <Text style={styles.hint}>{pickedTag.ownColor ? 'A color of its own — its parent’s changes don’t touch it.' : 'Its parent’s color, until you pick one of its own.'}</Text>
+            )}
+            <View style={styles.popBtns}>
+              {!!pickedTag?.parentId && pickedTag.ownColor && (
+                <Pressable
+                  style={styles.popCancel}
+                  onPress={() => {
+                    setTagColor(pickedTag.id, null);
+                    setTimeout(() => setColorPick(null), 240);
+                  }}>
+                  <Text style={styles.popCancelTxt}>Same as {settings.tags.find((t) => t.id === pickedTag.parentId)?.name ?? 'parent'}</Text>
+                </Pressable>
+              )}
+              <Pressable style={styles.popCancel} onPress={() => setColorPick(null)}>
+                <Text style={styles.popCancelTxt}>Done</Text>
+              </Pressable>
+            </View>
           </Appear>
         ) : (
           <Appear key="custom" from="right" distance={14}>
@@ -740,6 +759,9 @@ const styles = StyleSheet.create({
   manageBlock: { marginBottom: 8 },
   manageRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tagSwatch: { width: 34, height: 34, borderRadius: 10 },
+  tagIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', marginLeft: -2 },
+  tagIconTxt: { fontSize: 17 },
+  subColor: { width: 14, height: 14, borderRadius: 7 },
   manageName: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
   colorTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 16 },
   placeName: { flexDirection: 'row', alignItems: 'center', gap: 8 },

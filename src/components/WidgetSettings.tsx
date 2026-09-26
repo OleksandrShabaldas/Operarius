@@ -10,7 +10,7 @@ import { ms } from '../motion';
 import { C, MONTHS, WEEKDAYS_FULL } from '../theme';
 import { useApp } from '../store';
 import { Clock, Settings, Task } from '../types';
-import { addDays, dateKey, findTag, fmt, fmtDur, hexA, placeLabel, tagLabel, todayKey } from '../utils';
+import { addDays, dateKey, findTag, fmt, fmtDur, hexA, placeLabel, shownTitle, tagLabel, todayKey } from '../utils';
 import { expandRange, railColor, widgetOrder, widgetTimeline, WRow } from '../widgets';
 import { Appear, Tappable } from './anim';
 import { Hatch } from './Hatch';
@@ -356,7 +356,7 @@ function TimelineRow({ r, clock, s, now }: { r: WRow; clock: Clock; s: Settings;
               <Text style={styles.nextWhen}>{r.t.type === 'allday' ? 'TOMORROW · ALL DAY' : 'TOMORROW'}</Text>
               <Text numberOfLines={1} style={styles.nextTitle}>
                 {r.t.starred ? '★ ' : ''}
-                {r.t.title}
+                {shownTitle(r.t)}
               </Text>
             </View>
             {r.more > 0 && <Text style={styles.nextMore}>+{r.more}</Text>}
@@ -409,7 +409,7 @@ function CardRow({ r, clock, s, now }: { r: Extract<WRow, { kind: 'card' }>; clo
           <View style={styles.cardBody}>
             <Text numberOfLines={1} style={[styles.cTitle, t.done && styles.cTitleDone]}>
               {!!t.starred && <Text style={{ color: t.done ? '#6A6A72' : STAR }}>★ </Text>}
-              {t.title}
+              {shownTitle(t)}
             </Text>
             <Text numberOfLines={1} style={styles.cTime}>
               {fmt(t.start, clock)} – {fmt(t.start + t.dur, clock)}
@@ -601,7 +601,7 @@ function MonthGrid({ tasks, settings, off, rowH }: { tasks: Task[]; settings: Se
                     return (
                       <View key={t.id} style={[styles.mChip, { backgroundColor: hexA(t.color, strong ? 0.44 : inMonth ? 0.22 : 0.13) }]}>
                         <Text style={[styles.mChipTxt, !strong && { color: '#9A9AA2' }, t.done && styles.strike]} numberOfLines={1}>
-                          {t.title}
+                          {shownTitle(t)}
                         </Text>
                       </View>
                     );

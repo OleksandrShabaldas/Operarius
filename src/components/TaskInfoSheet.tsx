@@ -5,8 +5,11 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
-import { Clock, Place, Tag, Task } from '../types';
-import { fmt, fmtDur, hexA, dateHint, dateKey, dateLabel, findTag, placeLabel, repeatSummary, tagLabel } from '../utils';
+import { Clock, Place, RepeatScope, Tag, Task } from '../types';
+import { fmt, fmtDur, hexA, dateHint, dateKey, dateLabel, findTag, placeLabel, repeatSummary, shownTitle, tagLabel } from '../utils';
+import { ms } from '../motion';
+import { isSeries } from '../repeatScope';
+import { RepeatScopePopup } from './RepeatScopePopup';
 import { useApp } from '../store';
 import { reminderLines, whenLabel } from '../reminders';
 import { INTENSITY } from './ReminderBits';
@@ -21,22 +24,26 @@ export function TaskInfoSheet({
   tags,
   places,
   clock,
+  firstDay,
   onEdit,
   onCopy,
   onToggleDone,
   onToggleSubtask,
   onToggleStar,
+  onToggleAlt,
   onClose,
 }: {
   task: Task | null;
   tags: Tag[];
   places: Place[];
   clock: Clock;
-  onEdit: () => void;
+  firstDay: boolean; // a repeating task's first day ("this and following" would be all of it)
+  onEdit: (scope?: RepeatScope) => void;
   onCopy: () => void;
   onToggleDone: () => void;
   onToggleSubtask: (subId: string) => void;
   onToggleStar: () => void;
+  onToggleAlt: () => void; // its alternative name / its name
   onClose: () => void;
 }) {
   const visible = !!task;
@@ -44,6 +51,20 @@ export function TaskInfoSheet({
   if (task) tRef.current = task;
   const t = task ?? tRef.current;
   const [placeOpen, setPlaceOpen] = useState(false);
+  const [askScope, setAskScope] = useState(false); // editing one day of a repeating task: which days?
+  useEffect(() => {
+    if (!visible) setAskScope(false);
+  }, [visible]);
+  // A repeating task asks which of its days to edit first (its popup closes
+  // before the sheet does, so the two never move at once).
+  const edit = () => {
+    if (t && isSeries(t) && t.id.includes('@')) setAskScope(true);
+    else onEdit();
+  };
+  const editScope = (s: RepeatScope) => {
+    setAskScope(false);
+    setTimeout(() => onEdit(s), ms(200));
+  };
 
   const tag = t ? findTag(tags, t.tagId) : null;
   const tagColor = tag?.color || t?.color || C.accentA;
@@ -80,6 +101,9 @@ export function TaskInfoSheet({
   // Reminders for this occurrence, with when each fires.
   const { settings } = useApp();
   const remLines = t ? reminderLines(t, t.date, settings) : [];
+  // The synced calendar it's linked to (the main one, or another).
+  const cfg = settings.calendar;
+  const linkedCal = t?.cal && cfg.on ? (t.cal.c === cfg.calendarId ? { name: cfg.calendarName, color: cfg.color } : (cfg.extra.find((e) => e.id === t.cal!.c) ?? null)) : null;
   const rem = t?.reminders ? INTENSITY[t.reminders.intensity] : null;
   const remTime = (at: number | null, kind: string) => {
     if (at == null) return '';
@@ -98,7 +122,32 @@ export function TaskInfoSheet({
               <Text style={styles.iconTxt}>{t.emoji}</Text>
             </LinearGradient>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.title, t.done && styles.strike]}>{t.title}</Text>
+              {t.alt ? (
+                // Two names: tap to switch between them.
+                <Tappable
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    onToggleAlt();
+                  }}
+                  scaleTo={0.97}
+                  style={styles.titleRow}>
+                  <Appear key={shownTitle(t)} from="up" distance={6} style={{ flexShrink: 1 }}>
+                    <Text style={[styles.title, t.done && styles.strike]}>{shownTitle(t)}</Text>
+                  </Appear>
+                  <View style={styles.swap}>
+                    <Feather name="repeat" size={11} color={C.muted} />
+                  </View>
+                </Tappable>
+              ) : (
+                <Text style={[styles.title, t.done && styles.strike]}>{t.title}</Text>
+              )}
+              {!!t.alt && (
+                <Appear key={`o-${shownTitle(t)}`} from="up" distance={4}>
+                  <Text style={styles.otherName} numberOfLines={1}>
+                    {t.showAlt ? t.title : t.alt}
+                  </Text>
+                </Appear>
+              )}
               <View style={styles.typeBadge}>
                 <Text style={styles.typeTxt}>{typeLabel}</Text>
               </View>
@@ -110,11 +159,11 @@ export function TaskInfoSheet({
           {t.type === 'planned' && <InfoRow icon="clock" text={`${fmt(t.start, clock)} – ${fmt(t.start + t.dur, clock)}  ·  ${fmtDur(t.dur)}`} />}
           {t.type !== 'todo' && <InfoRow icon="calendar" text={dateLabel(t.date)} hint={dateHint(t.date)} />}
           {!!t.repeat && <InfoRow icon="repeat" text={t.cal?.span ? `Through ${dateLabel(t.repeat.endDate)}` : repeatSummary(t.repeat)} />}
-          {!!t.cal && settings.calendar.on && t.cal.c === settings.calendar.calendarId && (
+          {!!linkedCal && (
             <View style={styles.infoRow}>
-              <View style={[styles.calDot, { backgroundColor: settings.calendar.color, boxShadow: `0 0 0 3px ${hexA(settings.calendar.color, 0.2)}` }]} />
+              <View style={[styles.calDot, { backgroundColor: linkedCal.color, boxShadow: `0 0 0 3px ${hexA(linkedCal.color, 0.2)}` }]} />
               <Text style={styles.infoTxt} numberOfLines={1}>
-                {t.cal.from ? 'From' : 'In'} {settings.calendar.calendarName || 'your calendar'}
+                {t.cal!.from ? 'From' : 'In'} {linkedCal.name || 'your calendar'}
                 <Text style={styles.infoHint}>
                   {'  ·  '}
                   {settings.calendar.direction === 'both' ? 'synced both ways' : settings.calendar.direction === 'toCalendar' ? 'mirrored there' : 'follows the calendar'}
@@ -227,13 +276,15 @@ export function TaskInfoSheet({
               <Feather name="copy" size={16} color={C.text} />
               <Text style={styles.completeTxt}>Copy</Text>
             </Tappable>
-            <Tappable onPress={onEdit} style={styles.editWrap}>
+            <Tappable onPress={edit} style={styles.editWrap}>
               <LinearGradient colors={[C.accentA, C.accentB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edit}>
                 <Feather name="edit-2" size={15} color="#0b0b0d" />
                 <Text style={styles.editTxt}>Edit</Text>
               </LinearGradient>
             </Tappable>
           </View>
+
+          <RepeatScopePopup open={askScope} action="edit" date={t.date} first={firstDay} onPick={editScope} onClose={() => setAskScope(false)} />
 
           {/* Place card: its photo, where it is, and the way to get there. */}
           <CenterPopup open={placeOpen} onClose={() => setPlaceOpen(false)} cardStyle={styles.placeCard}>
@@ -313,6 +364,9 @@ const styles = StyleSheet.create({
   icon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   iconTxt: { fontSize: 26 },
   title: { fontSize: 21, fontWeight: '700', color: C.text },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '100%' },
+  swap: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },
+  otherName: { fontSize: 12.5, color: C.faint, marginTop: 2 },
   strike: { textDecorationLine: 'line-through', color: '#8a8a92' },
   typeBadge: { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.06)' },
   typeTxt: { fontSize: 11, fontWeight: '700', color: C.muted, letterSpacing: 0.3 },

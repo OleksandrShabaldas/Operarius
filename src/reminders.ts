@@ -5,7 +5,7 @@ import type { NativeConfig, NativeReminder } from '../modules/reminders';
 import { instanceId, occursOn } from './recurrence';
 import { C } from './theme';
 import { Clock, CustomReminder, Draft, ReminderIntensity, Reminders, Settings, Task, TaskType } from './types';
-import { addDays, dateKey, dateLabel, findTag, fmt, genId, tagLabel } from './utils';
+import { addDays, dateKey, dateLabel, findTag, fmt, genId, shownTitle, tagLabel } from './utils';
 
 // ---------------------------------------------------------------------------
 // Reminders — turning each task's reminder settings into the concrete list of
@@ -192,7 +192,7 @@ export function toNative(t: Task, f: Fire, s: Settings): NativeReminder {
     wall: wallOf(f.at),
     intensity: t.reminders?.intensity ?? 'easy',
     kind: f.kind,
-    title: t.title,
+    title: shownTitle(t),
     emoji: t.emoji,
     color: t.color,
     startAt: f.startAt,

@@ -7,7 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { Task } from '../types';
 import { useApp } from '../store';
-import { findTag, hexA } from '../utils';
+import { findTag, hexA, tagLabel } from '../utils';
+import { NameSwap } from '../components/TaskCard';
 import { Clock, Tag } from '../types';
 import { customLabel, INTENSITY_COLOR, nextCustom } from '../reminders';
 import { Appear, stagger, Tappable } from '../components/anim';
@@ -70,6 +71,7 @@ export function TodoScreen({
 }
 
 function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag | null; clock: Clock; onToggle: () => void; onOpen: () => void }) {
+  const { toggleAlt } = useApp();
   const tagColor = tag?.color || task.color;
   const next = task.done ? null : nextCustom(task.reminders);
   const remColor = task.reminders ? INTENSITY_COLOR[task.reminders.intensity] : C.muted;
@@ -94,16 +96,11 @@ function TodoRow({ task, tag, clock, onToggle, onOpen }: { task: Task; tag: Tag 
         <Text style={styles.iconTxt}>{task.emoji}</Text>
       </LinearGradient>
       <View style={{ flex: 1 }}>
-        <View style={styles.titleRow}>
-          {!!task.starred && <StarMark size={13} style={styles.star} />}
-          <Text style={[styles.rowTitle, task.done && styles.strike]} numberOfLines={1}>
-            {task.title}
-          </Text>
-        </View>
+        <NameSwap task={task} textStyle={[styles.rowTitle, task.done && styles.strike]} starSize={13} onSwap={() => toggleAlt(task.id)} />
         <View style={styles.metaRow}>
           {!!tag && (
             <View style={[styles.chip, { backgroundColor: hexA(tagColor, 0.15) }]}>
-              <Text style={[styles.chipTxt, { color: tagColor }]}>{tag.name}</Text>
+              <Text style={[styles.chipTxt, { color: tagColor }]}>{tagLabel(tag)}</Text>
             </View>
           )}
           {subCount > 0 &&

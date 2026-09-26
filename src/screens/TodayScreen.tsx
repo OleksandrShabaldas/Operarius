@@ -10,8 +10,10 @@ import { C } from '../theme';
 import { ms, sp } from '../motion';
 import { Task, TaskType } from '../types';
 import { useApp } from '../store';
-import { addDays, headerParts, hexA, todayKey } from '../utils';
-import { expandForDay } from '../recurrence';
+import { addDays, headerParts, hexA, shownTitle, todayKey } from '../utils';
+import { expandForDay, parseId } from '../recurrence';
+import { isFirstDay, isSeries } from '../repeatScope';
+import { RepeatScopePopup } from '../components/RepeatScopePopup';
 import { buildDragRuler, cardHeight, computeDayLayout, DragRuler, resolvePushApart } from '../layout';
 import { DayDot, WeekStrip } from '../components/WeekStrip';
 import { DraggedCard, Timeline } from '../components/Timeline';
@@ -65,6 +67,8 @@ function landing(c: DragCtx, min: number, pushApart: boolean): number {
 export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSettings, onNewTask, onOpenInfo, todayPing }: Props) {
   const insets = useSafeAreaInsets();
   const { tasks, settings, tasksForDay, toggleDone, toggleSubtask, toggleExpanded, moveTask } = useApp();
+  // A day of a repeating task dropped at another time: which days move?
+  const [moveAsk, setMoveAsk] = useState<{ id: string; start: number; date: string; first: boolean } | null>(null);
   const nowMin = useNowMinute();
   const [viewportH, setViewportH] = useState(560);
   const [headerH, setHeaderH] = useState(0);
@@ -175,8 +179,8 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
   }, [dragOver]);
 
   // Latest values for the (stable) drag callbacks.
-  const live = useRef({ layout, planned, settings, viewportH });
-  live.current = { layout, planned, settings, viewportH };
+  const live = useRef({ layout, planned, settings, viewportH, tasks });
+  live.current = { layout, planned, settings, viewportH, tasks };
 
   const scrollRef = useRef<any>(null);
   const viewportRef = useRef<View>(null);
@@ -274,7 +278,13 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
       const c = ctxRef.current;
       if (d && c && d.id === id) {
         const land = landing(c, d.min, live.current.settings.swapOnDrag);
-        if (land !== c.task.start) moveTask(id, land);
+        if (land !== c.task.start) {
+          const { baseId, date } = parseId(id);
+          const base = live.current.tasks.find((t) => t.id === baseId);
+          // (it springs back until the answer — then moves as asked)
+          if (base && date && isSeries(base)) setMoveAsk({ id, start: land, date, first: isFirstDay(base, date) });
+          else moveTask(id, land);
+        }
       }
       setDrag(null);
       ctxRef.current = null;
@@ -404,7 +414,7 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
                   </LinearGradient>
                   {!!t.starred && <StarMark size={12} style={{ marginRight: -3 }} />}
                   <Text style={[styles.alldayTitle, t.done && styles.strike]} numberOfLines={1}>
-                    {t.title}
+                    {shownTitle(t)}
                   </Text>
                 </Tappable>
               ))}
@@ -460,6 +470,18 @@ export function TodayScreen({ selectedKey, setSelectedKey, onOpenStats, onOpenSe
           {selectedKey < today && <Feather name="chevron-right" size={15} color={C.accentB} />}
         </Tappable>
       </Animated.View>
+
+      <RepeatScopePopup
+        open={!!moveAsk}
+        action="move"
+        date={moveAsk?.date ?? null}
+        first={!!moveAsk?.first}
+        onPick={(s) => {
+          if (moveAsk) moveTask(moveAsk.id, moveAsk.start, s);
+          setMoveAsk(null);
+        }}
+        onClose={() => setMoveAsk(null)}
+      />
 
       {/* Month view, dropping down from under the date (above everything here). */}
       <View pointerEvents="box-none" style={styles.monthLayer}>

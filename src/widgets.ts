@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import * as W from '../modules/widgets';
 import { occurrence, occursOn } from './recurrence';
 import { Settings, Task } from './types';
-import { addDays, dateFromKey, dateKey, findTag, placeLabel, tagLabel } from './utils';
+import { addDays, dateFromKey, dateKey, findTag, placeLabel, shownTitle, tagLabel } from './utils';
 
 // ---------------------------------------------------------------------------
 // Home-screen widgets — what they draw: the days around today in full (so the
@@ -152,7 +152,7 @@ export function buildWidgetSnapshot(tasks: Task[], s: Settings, now = new Date()
       const tag = findTag(s.tags, t.tagId);
       return {
         k: t.id,
-        t: t.title,
+        t: shownTitle(t),
         e: t.emoji,
         c: t.color,
         a: t.type === 'allday' ? 1 : 0,
@@ -176,7 +176,7 @@ export function buildWidgetSnapshot(tasks: Task[], s: Settings, now = new Date()
       i: [...list]
         .sort(widgetOrder)
         .slice(0, 3)
-        .map((t) => ({ t: t.title, c: t.color, x: t.done ? 1 : 0 })),
+        .map((t) => ({ t: shownTitle(t), c: t.color, x: t.done ? 1 : 0 })),
     };
   }
   return JSON.stringify({ v: 2, clock24: s.clock === '24h', weekStart: s.weekStart, dayStart: s.dayStart, dayEnd: s.dayEnd, gap: s.gapThreshold, days, month });

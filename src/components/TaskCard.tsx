@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleProp, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, LinearTransition, runOnJS, runOnUI, SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { ms, sp } from '../motion';
@@ -8,7 +8,8 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Place, Tag, Task } from '../types';
 import { BAND_W, C, CARD_L, LANE_R } from '../theme';
-import { fmt, fmtDur, findTag, hexA, placeLabel, shade, tagLabel } from '../utils';
+import { fmt, fmtDur, findTag, hexA, placeLabel, shade, shownTitle, tagLabel } from '../utils';
+import { useApp } from '../store';
 import { INTENSITY_COLOR, remindsAtAll } from '../reminders';
 import { openSubtasks } from '../recurrence';
 import { Pos } from '../layout';
@@ -54,14 +55,10 @@ function CardFace({ task, s, end, clock, tags, places, past }: { task: Task; s: 
   const tag = findTag(tags, task.tagId);
   const tagColor = tag?.color || task.color;
   const placeTxt = placeLabel(places, task.placeId);
+  const { toggleAlt } = useApp();
   return (
     <View style={styles.body}>
-      <View style={styles.titleRow}>
-        {!!task.starred && <StarMark size={13} style={styles.star} />}
-        <Text numberOfLines={1} style={[styles.title, task.done && styles.strike]}>
-          {task.title}
-        </Text>
-      </View>
+      <NameSwap task={task} textStyle={[styles.title, task.done && styles.strike]} starSize={13} onSwap={() => toggleAlt(task.id)} />
       <View style={styles.timeRow}>
         <Text numberOfLines={1} style={styles.time}>
           {fmt(s, clock)} – {fmt(end, clock)} <Text style={styles.dur}>· {fmtDur(task.dur)}</Text>
@@ -462,6 +459,42 @@ export const TaskCard = React.memo(TaskCardBase, (prev, next) => {
     } else if (prev[k] !== next[k]) return false;
   }
   return true;
+});
+
+// A task's name as shown — and, when it has an alternative one, a tap on it
+// switches to the other (a small swap mark says it can).
+export function NameSwap({ task, textStyle, starSize, onSwap }: { task: Task; textStyle: StyleProp<TextStyle>; starSize: number; onSwap: () => void }) {
+  const inner = (
+    <>
+      {!!task.starred && <StarMark size={starSize} style={nameStyles.star} />}
+      <Appear key={shownTitle(task)} from="up" distance={5} style={nameStyles.name}>
+        <Text numberOfLines={1} style={textStyle}>
+          {shownTitle(task)}
+        </Text>
+      </Appear>
+      {!!task.alt && <Feather name="repeat" size={10} color={C.faint} style={nameStyles.mark} />}
+    </>
+  );
+  if (!task.alt) return <View style={nameStyles.row}>{inner}</View>;
+  return (
+    <Tappable
+      onPress={() => {
+        Haptics.selectionAsync().catch(() => {});
+        onSwap();
+      }}
+      hitSlop={4}
+      scaleTo={0.97}
+      style={nameStyles.row}>
+      {inner}
+    </Tappable>
+  );
+}
+
+const nameStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%' },
+  star: { marginRight: 5 },
+  name: { flexShrink: 1 },
+  mark: { marginLeft: 5 },
 });
 
 const styles = StyleSheet.create({

@@ -119,7 +119,12 @@ export function findTag(tags: Tag[], id: string | null): Tag | null {
   return id ? tags.find((t) => t.id === id) || null : null;
 }
 
-// A tag as shown on chips and in pickers: its icon (sub-tags) before the name.
+// The name a task shows: its alternative one when that's picked (tap the name to switch).
+export function shownTitle(t: { title: string; alt?: string; showAlt?: boolean }): string {
+  return t.showAlt && t.alt?.trim() ? t.alt.trim() : t.title;
+}
+
+// A tag as shown on chips and in pickers: its icon before the name.
 export function tagLabel(t: Tag): string {
   return t.icon ? `${t.icon} ${t.name}` : t.name;
 }

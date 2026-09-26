@@ -8,8 +8,9 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C } from '../theme';
 import { ms, sp } from '../motion';
-import { Clock, Draft, Place, Preset, Reminders, Tag, Task, TaskType } from '../types';
-import { dateHint, dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, tagLabel, todayKey } from '../utils';
+import { Clock, Draft, Place, Preset, Reminders, RepeatScope, Tag, Task, TaskType } from '../types';
+import { dateHint, dateLabel, fmt, fmtDur, findTag, genId, hexA, repeatSummary, shortDate, tagLabel, todayKey } from '../utils';
+import { RepeatScopePopup } from './RepeatScopePopup';
 import { carryReminders, intensityFor, reminderSummary } from '../reminders';
 import { useApp } from '../store';
 import { ReminderPopup } from './ReminderPopup';
@@ -41,9 +42,11 @@ type Props = {
   dayStart?: number; // visible day window — the day-edge anchors
   dayEnd?: number;
   autoPickDate?: boolean; // open straight into the date picker (used when copying)
+  repeatDay?: string | null; // a repeating task opened from this day (deleting it asks which days)
+  repeatFirst?: boolean; // …its first day
   onPatch: (patch: Partial<Draft>) => void;
   onSave: () => void;
-  onDelete: () => void;
+  onDelete: (scope?: RepeatScope) => void;
   onClose: () => void;
 };
 
@@ -74,6 +77,8 @@ export function TaskEditorSheet({
   dayStart = 0,
   dayEnd = DAY_MAX,
   autoPickDate,
+  repeatDay,
+  repeatFirst,
   onPatch,
   onSave,
   onDelete,
@@ -135,7 +140,20 @@ export function TaskEditorSheet({
   }
   const d = draft ?? dRef.current;
   const daySibs = draft ? siblings : sibRef.current;
-  const isEditing = !!d?.id;
+  // (a day of a series, or it and the days after it, is edited too — as a task of its own)
+  const isEditing = !!d?.id || !!d?.scope;
+  const [altOpen, setAltOpen] = useState(false); // the alternative name's field, before it has one
+  const [askDel, setAskDel] = useState(false); // deleting a repeating task: which days?
+  useEffect(() => {
+    setAltOpen(false);
+    setAskDel(false);
+  }, [visible, d?.id]);
+  const askDelete = () => {
+    if (d && !d.scope && d.id && d.repeat && !d.cal?.span && repeatDay) setAskDel(true);
+    else onDelete();
+  };
+  // What part of a series the editor holds.
+  const scopeLine = d?.scope ? (d.scope.kind === 'one' ? `Only ${shortDate(d.scope.date)}` : `${shortDate(d.scope.date)} and after`) : d?.id && d.repeat && repeatDay && !d.cal?.span ? 'All days of the series' : null;
   const end = d ? d.start + d.dur : 0;
   const canSave = !!d?.title.trim();
 
@@ -277,7 +295,15 @@ export function TaskEditorSheet({
         {d && (
           <>
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>{isEditing ? 'Edit task' : 'New task'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.headerTitle}>{isEditing ? 'Edit task' : 'New task'}</Text>
+                {!!scopeLine && (
+                  <Appear from="up" delay={60} distance={5} style={styles.scopeLine}>
+                    <Feather name={d.scope?.kind === 'one' ? 'square' : d.scope ? 'chevrons-right' : 'repeat'} size={11} color={C.accentB} />
+                    <Text style={styles.scopeTxt}>{scopeLine}</Text>
+                  </Appear>
+                )}
+              </View>
               <Tappable onPress={onClose} hitSlop={8} style={styles.closeBtn}>
                 <Feather name="x" size={20} color={C.textDim} />
               </Tappable>
@@ -324,6 +350,34 @@ export function TaskEditorSheet({
                     style={[styles.titleInput, attempted && !canSave ? styles.titleInputErr : null]}
                   />
                   {attempted && !canSave && <Text style={styles.errHint}>Give your task a name to continue</Text>}
+                  {/* An alternative name (e.g. a short one): tap the task's name to switch between the two. */}
+                  {altOpen || d.alt != null ? (
+                    <Appear from="up" distance={6} style={styles.altRow}>
+                      <Feather name="repeat" size={12} color={C.muted} />
+                      <TextInput
+                        value={d.alt ?? ''}
+                        onChangeText={(alt) => patch({ alt })}
+                        autoFocus={altOpen && !d.alt}
+                        returnKeyType="done"
+                        placeholder="Alternative name"
+                        placeholderTextColor={C.faint}
+                        style={styles.altInput}
+                      />
+                      <Tappable
+                        hitSlop={10}
+                        onPress={() => {
+                          patch({ alt: undefined, showAlt: undefined });
+                          setAltOpen(false);
+                        }}>
+                        <Feather name="x" size={14} color={C.faint} />
+                      </Tappable>
+                    </Appear>
+                  ) : (
+                    <Tappable onPress={() => setAltOpen(true)} hitSlop={6} style={styles.altAdd}>
+                      <Feather name="plus" size={12} color={C.muted} />
+                      <Text style={styles.altAddTxt}>Alternative name</Text>
+                    </Tappable>
+                  )}
                 </View>
                 {/* High priority: listed first (and first on the month widget). */}
                 <StarToggle on={!!d.starred} onToggle={() => patch({ starred: !d.starred || undefined })} />
@@ -443,7 +497,7 @@ export function TaskEditorSheet({
             <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom + 14 }}>
               <View style={styles.actions}>
                 {isEditing && (
-                  <Tappable onPress={onDelete} style={styles.delete}>
+                  <Tappable onPress={askDelete} style={styles.delete}>
                     <Feather name="trash-2" size={18} color={C.danger} />
                   </Tappable>
                 )}
@@ -465,6 +519,19 @@ export function TaskEditorSheet({
           </>
         )}
       </BottomSheet>
+
+      {/* Deleting a day of a repeating task: which days go (the popup closes first). */}
+      <RepeatScopePopup
+        open={askDel}
+        action="delete"
+        date={repeatDay ?? null}
+        first={!!repeatFirst}
+        onPick={(s) => {
+          setAskDel(false);
+          setTimeout(() => onDelete(s), ms(200));
+        }}
+        onClose={() => setAskDel(false)}
+      />
 
       {/* Icon + color picker: one full row of colours, two full rows of icons */}
       <CenterPopup open={picker === 'icon'} onClose={() => setPicker(null)}>
@@ -807,6 +874,12 @@ function FieldRow({
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   headerTitle: { fontSize: 19, fontWeight: '700', color: C.text },
+  scopeLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  scopeTxt: { fontSize: 12, fontWeight: '700', color: C.accentB },
+  altRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 8 },
+  altInput: { flex: 1, color: C.textDim, fontSize: 15, fontWeight: '600', padding: 0, paddingBottom: 3, boxShadow: 'inset 0 -1px 0 0 rgba(255,255,255,0.08)' },
+  altAdd: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', marginTop: 7, paddingVertical: 2 },
+  altAddTxt: { fontSize: 12.5, fontWeight: '600', color: C.muted },
   closeBtn: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },

@@ -11,9 +11,10 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { C } from './src/theme';
 import { ms, setMotion } from './src/motion';
 import { AppProvider, useApp } from './src/store';
-import { Draft, TaskType } from './src/types';
+import { Draft, RepeatScope, TaskType } from './src/types';
 import { occurrence, parseId } from './src/recurrence';
-import { todayKey } from './src/utils';
+import { shortDate, shownTitle, todayKey } from './src/utils';
+import { dayDraft, isFirstDay, isSeries, restDraft } from './src/repeatScope';
 import { carryReminders, defaultReminders, useReminderSync } from './src/reminders';
 import { holdCalendarSync, useCalendarSync } from './src/calendarSync';
 import { useWidgetSync } from './src/widgets';
@@ -54,7 +55,7 @@ function BackgroundGlow() {
 
 function Root() {
   const app = useApp();
-  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, restoreTask, toggleDone, setDone, toggleSubtask, toggleStar, applyCalendarSync } = app;
+  const { loaded, tasks, settings, tasksForDay, saveDraft, deleteTask, restoreTask, toggleDone, setDone, toggleSubtask, toggleStar, toggleAlt, applyCalendarSync } = app;
 
   const [tab, setTab] = useState<Tab>('today');
   const [overlay, setOverlay] = useState<'stats' | 'settings' | null>(null);
@@ -65,6 +66,8 @@ function Root() {
   const [viewId, setViewId] = useState<string | null>(null);
   const [todayPing, setTodayPing] = useState(0); // re-tapping the Today tab → jump to today
   const [undo, setUndo] = useState<(UndoItem & { deleted: Deleted }) | null>(null); // the last deleted task, for a few seconds
+  // The day a repeating task's editor was opened from (so deleting it can ask: that day, it and after, or all).
+  const [editDay, setEditDay] = useState<string | null>(null);
 
   const [update, setUpdate] = useState<ReleaseInfo | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -203,6 +206,7 @@ function Root() {
   const openNew = useCallback(
     (opts?: { startMin?: number; dur?: number; type?: TaskType }) => {
       setAutoDate(false);
+      setEditDay(null);
       const type: TaskType = opts?.type ?? (tab === 'todo' ? 'todo' : 'planned');
       // A tapped free gap sets the time (and length), and the To-do tab /
       // All-day button the type, on purpose — a name suggestion must not
@@ -241,15 +245,24 @@ function Root() {
 
   // Close the info sheet first, then open the editor a beat later, so the two
   // bottom-sheet modals never transition at the same time (which on Android can
-  // drop the touch and leave nothing open).
-  const editFromInfo = useCallback(() => {
-    if (!viewId) return;
-    const base = tasks.find((x) => x.id === parseId(viewId).baseId);
-    setAutoDate(false);
-    setDraftTouched([]);
-    setViewId(null);
-    if (base) setTimeout(() => setDraft({ ...base }), ms(230) + 30); // editing a repeat edits the series
-  }, [viewId, tasks]);
+  // drop the touch and leave nothing open). A day of a repeating task: the
+  // editor gets that day alone, it and the days after it, or the whole series.
+  const editFromInfo = useCallback(
+    (scope: RepeatScope = 'all') => {
+      if (!viewId) return;
+      const { baseId, date } = parseId(viewId);
+      const base = tasks.find((x) => x.id === baseId);
+      setAutoDate(false);
+      setDraftTouched([]);
+      setViewId(null);
+      if (!base) return;
+      const day = date && isSeries(base) ? date : null;
+      const next: Draft = day && scope === 'one' ? dayDraft(base, day) : day && scope === 'following' ? restDraft(base, day) : { ...base };
+      setEditDay(day);
+      setTimeout(() => setDraft(next), ms(230) + 30);
+    },
+    [viewId, tasks]
+  );
 
   // Copy an existing task into a fresh draft (no id → new task) and jump the
   // editor straight to the date picker so you choose the new day right away.
@@ -258,8 +271,9 @@ function Root() {
     const base = tasks.find((x) => x.id === parseId(viewId).baseId);
     setViewId(null);
     if (base) {
-      const { id: _id, done: _done, doneDates: _dd, subDone: _sd, ...rest } = base;
+      const { id: _id, done: _done, doneDates: _dd, subDone: _sd, skip: _sk, cal: _cal, ...rest } = base;
       setAutoDate(true);
+      setEditDay(null);
       setDraftTouched(['emoji', 'color', 'type', 'start', 'dur', 'tagId', 'placeId', 'notes', 'subtasks', 'repeat', 'reminders']);
       // Reminders come along — the relative ones, and custom ones still ahead.
       const reminders = carryReminders(base.reminders);
@@ -280,15 +294,26 @@ function Root() {
   // calendar waits until then, so an undone delete never reaches it).
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const del = useCallback(() => {
-    const d = draftRef.current;
-    setDraft(null);
-    if (!d?.id) return;
-    const gone = deleteTask(d.id);
-    if (!gone) return;
-    holdCalendarSync(UNDO_MS + 400);
-    setUndo({ n: Date.now(), title: gone.task.title, emoji: gone.task.emoji, color: gone.task.color, deleted: gone });
-  }, [deleteTask]);
+  const editDayRef = useRef(editDay);
+  editDayRef.current = editDay;
+  // A repeating task's days: the ones the editor was opened for (a draft with a
+  // scope), or — asked when deleting the series — that day, it and after, or all.
+  const del = useCallback(
+    (scope: RepeatScope = 'all') => {
+      const d = draftRef.current;
+      setDraft(null);
+      const day = d?.scope?.date ?? editDayRef.current;
+      const kind: RepeatScope = d?.scope ? d.scope.kind : scope;
+      const id = d?.scope?.baseId ?? d?.id;
+      if (!id) return;
+      const gone = deleteTask(day && kind !== 'all' ? `${id}@${day}` : id, kind);
+      if (!gone) return;
+      holdCalendarSync(UNDO_MS + 400);
+      const which = gone.series && day ? (kind === 'one' ? ` · ${shortDate(day)} only` : ` · from ${shortDate(day)} on`) : '';
+      setUndo({ n: Date.now(), title: shownTitle(gone.task) + which, emoji: gone.task.emoji, color: gone.task.color, deleted: gone });
+    },
+    [deleteTask]
+  );
 
   if (!loaded) return <View style={styles.bg} />;
 
@@ -298,17 +323,22 @@ function Root() {
     draft && draft.type === 'planned' && draft.date
       ? tasksForDay(draft.date)
           .filter((t) => t.type === 'planned' && parseId(t.id).baseId !== draft.id)
-          .map((t) => ({ id: t.id, start: t.start, dur: t.dur, title: t.title, color: t.color }))
+          .map((t) => ({ id: t.id, start: t.start, dur: t.dur, title: shownTitle(t), color: t.color }))
       : [];
 
   // Resolve the info-sheet target — a repeating occurrence is reconstructed
   // from its base with the right date and per-occurrence done state.
   let viewTask = null as (typeof tasks)[number] | null;
+  let viewFirst = true; // the series' first day (so "this and following" would be all of it)
   if (viewId) {
     const { baseId, date } = parseId(viewId);
     const base = tasks.find((t) => t.id === baseId) || null;
     viewTask = base && base.repeat && date ? occurrence(base, date) : base;
+    viewFirst = !base || !date || !isSeries(base) || isFirstDay(base, date);
   }
+  // The same for the day the editor was opened from.
+  const editBase = draft?.id && editDay ? tasks.find((t) => t.id === draft.id) : undefined;
+  const editFirst = !editBase || !editDay || isFirstDay(editBase, editDay);
 
   return (
     <View style={styles.bg}>
@@ -363,11 +393,13 @@ function Root() {
         tags={settings.tags}
         places={settings.places}
         clock={settings.clock}
+        firstDay={viewFirst}
         onEdit={editFromInfo}
         onCopy={copyFromInfo}
         onToggleDone={() => viewTask && toggleDone(viewTask.id)}
         onToggleSubtask={(subId) => viewTask && toggleSubtask(viewTask.id, subId)}
         onToggleStar={() => viewTask && toggleStar(viewTask.id)}
+        onToggleAlt={() => viewTask && toggleAlt(viewTask.id)}
         onClose={() => setViewId(null)}
       />
 
@@ -387,6 +419,8 @@ function Root() {
         dayStart={settings.dayStart}
         dayEnd={settings.dayEnd}
         autoPickDate={autoDate}
+        repeatDay={editDay}
+        repeatFirst={editFirst}
         onPatch={patch}
         onSave={save}
         onDelete={del}
